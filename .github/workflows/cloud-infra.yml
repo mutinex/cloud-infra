@@ -4,9 +4,9 @@ on:
   push:
     branches:
       - main
-  # pull_request:
-  #   paths-ignore:
-  #     - '.github/workflows/**'
+  pull_request:
+    paths-ignore:
+      - '.github/workflows/**'
 
 jobs:
   test-and-build:
@@ -27,7 +27,7 @@ jobs:
       - run: corepack enable
 
       - name: Install dependencies
-        run: yarn --frozen-lockfile
+        run: yarn install --immutable
         env:
           GITHUB_PACKAGES_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
@@ -44,7 +44,7 @@ jobs:
   publish:
     name: Publish to GitHub Packages
     needs: test-and-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,7 +60,7 @@ jobs:
       - name: Check if package.json changed
         id: check-package
         run: |
-          if git diff HEAD^ HEAD --name-only | grep -q "^lib/cloud-infra/package.json$"; then
+          if git diff HEAD^ HEAD --name-only | grep -q "^package.json$"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
