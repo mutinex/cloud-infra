@@ -2,9 +2,9 @@
   <img src="./logo.png" width="400" />
 </p>
 
-# @
+# @mutinex/cloud-infra
 
-`@` is a comprehensive Pulumi library designed to streamline the management of Google Cloud Platform (GCP) infrastructure. It provides a suite of foundational helpers and resource components that enforce consistency, simplify complex tasks like IAM and cross-stack dependencies, and promote best practices for building scalable and maintainable cloud environments.
+`@mutinex/cloud-infra` is a comprehensive Pulumi library designed to streamline the management of Google Cloud Platform (GCP) infrastructure. It provides a suite of foundational helpers and resource components that enforce consistency, simplify complex tasks like IAM and cross-stack dependencies, and promote best practices for building scalable and maintainable cloud environments.
 
 By standardizing resource naming, metadata, outputs, and access policies, this library helps accelerate development and reduce configuration errors across all your organization's projects.
 
