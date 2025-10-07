@@ -44,7 +44,7 @@ jobs:
   publish:
     name: Publish to GitHub Packages
     needs: test-and-build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
