@@ -44,7 +44,7 @@ jobs:
   publish:
     name: Publish to GitHub Packages
     needs: test-and-build
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,7 +60,7 @@ jobs:
       - name: Check if package.json changed
         id: check-package
         run: |
-          if git diff HEAD^ HEAD --name-only | grep -q "^lib/cloud-infra/package.json$"; then
+          if git diff HEAD^ HEAD --name-only | grep -q "^package.json$"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
