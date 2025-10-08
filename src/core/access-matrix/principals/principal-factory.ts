@@ -61,20 +61,8 @@ export class PrincipalFactory {
   ): ResolvedPrincipal {
     this.initialize();
 
-    // Create cache key (simple string representation for basic caching)
-    const cacheKey = this.createCacheKey(principal, principalIndex);
-
-    // Check cache first for performance
-    if (this.resolutionCache.has(cacheKey)) {
-      const cached = this.resolutionCache.get(cacheKey)!;
-      if (accessMatrixConfig.enableDetailedLogging) {
-        CloudInfraLogger.info(
-          `Using cached resolution for principal ${cacheKey}`,
-          { component: 'access-matrix', operation: 'principal-resolution' }
-        );
-      }
-      return cached;
-    }
+    // Disable caching - it was causing issues with Pulumi Outputs
+    // that appear identical when stringified but have different values
 
     const resolver = this.findResolver(principal);
     if (!resolver) {
@@ -91,17 +79,6 @@ export class PrincipalFactory {
 
     try {
       const resolved = resolver.resolve(principal, principalIndex);
-
-      // Cache successful resolutions (with size limit to prevent memory leaks)
-      if (this.resolutionCache.size < 1000) {
-        this.resolutionCache.set(cacheKey, resolved);
-      } else if (accessMatrixConfig.enableDetailedLogging) {
-        CloudInfraLogger.warn(
-          'Resolution cache limit reached, skipping caching',
-          { component: 'access-matrix', operation: 'principal-resolution' }
-        );
-      }
-
       return resolved;
     } catch (error) {
       const errorMessage =
