@@ -1,5 +1,5 @@
 {
-  "name": "@Mutinex/cloud-infra",
+  "name": "@mutinex/cloud-infra",
   "version": "1.0.2",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
