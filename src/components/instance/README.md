@@ -91,29 +91,26 @@ export const databaseInstance = new CloudInfraComputeInstance('database', {
 > is distinct from the naming `location`. If `zone` is omitted, the zone defaults
 > to `<region>-a` derived from meta.
 
-### 3. Meta-first construction (deprecated, back-compat)
+### 3. Instance with a project override (name-first)
 
-> **@deprecated** Prefer the name-first form above. Meta-first is retained for
-> backward compatibility and produces **identical** resources. Use it for
-> meta-only concepts such as `gcpProject` (project override) that have no
-> name-first equivalent.
+`gcpProject` maps to the name-first `project:` config field — there is no need
+to drop to meta-first for a project override.
 
 ```ts
-const webServerInstanceMeta = new CloudInfraMeta({
-  name: 'web-server',
+export const webServerInstance = new CloudInfraComputeInstance('web-server', {
   domain: 'au',
-  gcpProject: 'my-project',
+  project: 'my-project', // maps to meta's gcpProject
+  machineType: 'e2-micro',
+  bootDisk: { initializeParams: { image: 'debian-cloud/debian-11' } },
+  networkInterfaces: [{ network: 'default' }],
 });
-
-export const webServerInstance = new CloudInfraComputeInstance(
-  webServerInstanceMeta,
-  {
-    machineType: 'e2-micro',
-    bootDisk: { initializeParams: { image: 'debian-cloud/debian-11' } },
-    networkInterfaces: [{ network: 'default' }],
-  }
-);
 ```
+
+> **@deprecated** Meta-first construction (`new CloudInfraComputeInstance(meta, config)`)
+> is retained for backward compatibility and produces **identical** resources.
+> The only reason to reach for it is `overrideNamingRules` (a `CloudInfraMeta`
+> schema field with no name-first/config equivalent); `gcpProject` and the
+> `omit*` flags all have name-first equivalents (`project:` / `naming`).
 
 ---
 
