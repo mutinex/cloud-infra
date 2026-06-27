@@ -129,28 +129,3 @@ export function isInitialized(): boolean {
     ResourceRegistry.getRegisteredTypes().length > 0
   );
 }
-
-/**
- * Get initialization status and registered types.
- *
- * @returns Initialization information including registered types and counts
- */
-export function getInitializationInfo(): {
-  initialized: boolean;
-  registeredBuilderTypes: string[];
-  registeredResourceTypes: string[];
-  builderCount: number;
-  resourceHandlerCount: number;
-} {
-  const registeredBuilderTypes = IamBuilderRegistry.getRegisteredTypes();
-  const registeredResourceTypes = ResourceRegistry.getRegisteredTypes();
-
-  return {
-    initialized:
-      registeredBuilderTypes.length > 0 && registeredResourceTypes.length > 0,
-    registeredBuilderTypes,
-    registeredResourceTypes,
-    builderCount: registeredBuilderTypes.length,
-    resourceHandlerCount: registeredResourceTypes.length,
-  };
-}

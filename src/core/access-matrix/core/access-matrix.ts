@@ -217,19 +217,4 @@ export class CloudInfraAccessMatrix {
   getPolicyRuleCount(): number {
     return this.iamMembers.length;
   }
-
-  /**
-   * Get configuration information (for debugging).
-   *
-   * @returns Configuration information object
-   */
-  getConfigInfo(): {
-    configuredCases: string[];
-    rawConfig: Record<string, unknown[]>;
-  } {
-    return {
-      configuredCases: this.configResolver.getConfiguredCases(),
-      rawConfig: this.configResolver.getRawConfig(),
-    };
-  }
 }

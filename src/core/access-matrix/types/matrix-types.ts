@@ -148,18 +148,6 @@ export type MatrixUseCaseInput = MatrixPolicyRule[] | MatrixUseCase;
 export type AccessMatrixCases = Record<string, MatrixUseCaseInput>;
 
 /**
- * Information for a processed policy rule, ready for IAM resource creation.
- */
-export interface ProcessedPolicyRule {
-  readonly resource: MatrixResource;
-  readonly role: MatrixRoleInput;
-  readonly member: pulumi.Input<string>;
-  readonly principalIdentifier: string;
-  readonly label?: string;
-  readonly resourceKey?: string;
-}
-
-/**
  * Context for processing a single policy rule.
  */
 export interface PolicyRuleProcessingContext {

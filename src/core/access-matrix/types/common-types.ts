@@ -27,45 +27,6 @@ export class ResourceNotSupportedError extends AccessMatrixError {
 }
 
 /**
- * Error thrown when configuration validation fails
- */
-export class ConfigValidationError extends AccessMatrixError {
-  constructor(caseName: string, details: string) {
-    super(
-      `Configuration validation failed for case '${caseName}': ${details}`,
-      { caseName, details }
-    );
-    this.name = 'ConfigValidationError';
-  }
-}
-
-/**
- * Error thrown when IAM resource creation fails
- */
-export class IamResourceCreationError extends AccessMatrixError {
-  constructor(resourceName: string, resourceType: string, cause: Error) {
-    super(
-      `Failed to create IAM resource '${resourceName}' of type '${resourceType}': ${cause.message}`,
-      { resourceName, resourceType, cause }
-    );
-    this.name = 'IamResourceCreationError';
-  }
-}
-
-/**
- * Error thrown when principal resolution fails
- */
-export class PrincipalResolutionError extends AccessMatrixError {
-  constructor(principalIndex: number, cause: Error) {
-    super(
-      `Failed to resolve principal at index ${principalIndex}: ${cause.message}`,
-      { principalIndex, cause }
-    );
-    this.name = 'PrincipalResolutionError';
-  }
-}
-
-/**
  * Error thrown when an unsupported principal type is encountered
  */
 export class UnsupportedPrincipalError extends AccessMatrixError {
@@ -90,35 +51,6 @@ export class ResourceTypeDiscoveryError extends AccessMatrixError {
         : String(resource);
     super(`Cannot determine resource type for: ${resourceInfo}`, resource);
     this.name = 'ResourceTypeDiscoveryError';
-  }
-}
-
-/**
- * Error thrown when domain-optional resource cannot be found
- */
-export class ReferenceWithoutDomainResourceNotFoundError extends AccessMatrixError {
-  constructor(resourceType: string, name: string, stack: string) {
-    super(
-      `Domain-optional resource '${name}' of type '${resourceType}' not found in stack '${stack}'`
-    );
-    this.name = 'ReferenceWithoutDomainResourceNotFoundError';
-  }
-}
-
-/**
- * Error thrown when domain-based resource cannot be found
- */
-export class ReferenceWithDomainResourceNotFoundError extends AccessMatrixError {
-  constructor(
-    resourceType: string,
-    name: string,
-    domain: string,
-    stack: string
-  ) {
-    super(
-      `Domain-based resource '${name}' of type '${resourceType}' not found under domain '${domain}' in stack '${stack}'`
-    );
-    this.name = 'ReferenceWithDomainResourceNotFoundError';
   }
 }
 
@@ -231,17 +163,4 @@ export interface ResolvedPrincipal {
  */
 export interface AccessMatrixConfig {
   readonly principals: unknown[];
-}
-
-/**
- * Performance metrics for access matrix operations
- */
-export interface AccessMatrixMetrics {
-  readonly processingTimeMs: number;
-  readonly caseCount: number;
-  readonly ruleCount: number;
-  readonly principalCount: number;
-  readonly iamResourceCount: number;
-  readonly cacheHits: number;
-  readonly cacheMisses: number;
 }

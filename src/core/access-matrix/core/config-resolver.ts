@@ -119,22 +119,4 @@ export class ConfigResolver {
   hasConfig(caseName: string): boolean {
     return caseName in this.matrixConfigRoot;
   }
-
-  /**
-   * Get all configured case names.
-   *
-   * @returns Array of case names that have configuration
-   */
-  getConfiguredCases(): string[] {
-    return Object.keys(this.matrixConfigRoot);
-  }
-
-  /**
-   * Get raw configuration for debugging.
-   *
-   * @returns Raw configuration object
-   */
-  getRawConfig(): Record<string, unknown[]> {
-    return { ...this.matrixConfigRoot };
-  }
 }
