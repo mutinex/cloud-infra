@@ -2,14 +2,19 @@
 
 This module provides a robust solution for managing and structuring Pulumi resource outputs. It allows for the systematic collection and organization of resource attributes, making them easily accessible for inter-stack references, automation, or auditing purposes.
 
-The core component is the `CloudInfraOutput`, a class designed to record resource details into a nested data structure organized by domain, resource type, and a custom grouping key.
+The core component is the `CloudInfraOutput`, a class that records resource details and emits them on **two wires** simultaneously:
+
+- **Flat wire (v2, recommended)** — `getFlatOutputs()` returns a `FlatOutputRecord[]`: a flat array of self-describing records, each carrying its `key` / `type` / `domain` addressing **inline** alongside the resource fields.
+- **Nested wire (legacy, retained for back-compat)** — `getOutputs()` returns the original `data[domain][resourceType][groupingKey]` nested map. It is still emitted unchanged.
+
+Every call to `record()` writes to **both** wires. The flat emission is purely additive — it **never** replaces the nested map.
 
 ## Key Features
 
-- **Structured Outputs**: Organizes outputs in a predictable, hierarchical format.
-- **Versioning**: Allows output schemas to evolve without breaking existing consumers.
-- **Selective Recording**: Captures only the specified and available fields from a resource.
-- **Easy Integration**: Works with any Pulumi resource that conforms to a simple interface.
+- **Flat, self-describing outputs (v2)**: each record fully describes itself (`key`, `type`, `domain` inline), so consumers filter/map over an array instead of walking three levels of nesting.
+- **Dual emission**: the legacy nested map is emitted alongside the flat wire, so existing consumers keep working with no change.
+- **Selective Recording**: captures only the defined fields from a resource (`id` is always present; `name` and the optional fields are included only when defined).
+- **Component integration**: every `@mutinex/cloud-infra` component exposes `.exportOutputs(manager)`, which calls `record()` for you with the correct type/grouping.
 
 ## Installation
 
@@ -19,11 +24,32 @@ This module is part of the `@mutinex/cloud-infra` package. Ensure you have it in
 npm install @mutinex/cloud-infra
 ```
 
+## The recommended v2 pattern
+
+Construct an output manager, let each component record itself via `exportOutputs()`, then export the **flat wire** as the primary output. The nested wire is exported alongside for back-compat.
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+
+// Each component records itself (calls `record()` internally).
+myComponent.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); // legacy nested wire (still emitted)
+```
+
+> **Prefer components over raw resources.** Construct components with the
+> name-first form (`new CloudInfraAccount("my-app", { domain: "au" })`) and call
+> `exportOutputs()`. Reach for the raw `record(type, key, meta, resource)` API
+> only for a resource that has no CloudInfra component wrapper.
+
 ## Usage
 
 ### Real-World Example: Exporting Infrastructure Outputs
 
-This example shows how the Output Manager is used in production to export infrastructure components for cross-stack references, based on actual usage from the org project:
+This example shows how the Output Manager is used in production to export infrastructure components for cross-stack references, based on actual usage from the org project. Each component exposes `exportOutputs()`, which records itself with the manager.
 
 ```typescript
 import { CloudInfraOutput } from '@mutinex/cloud-infra';
@@ -55,7 +81,8 @@ if (growthosRepo) {
   growthosRepo.exportOutputs(orgOutput);
 }
 
-// Export the structured outputs for other stacks to consume
+// v2 flat wire (recommended), plus the legacy nested wire for back-compat.
+export const cloudInfra = orgOutput.getFlatOutputs();
 export const org = orgOutput.getOutputs();
 ```
 
@@ -86,133 +113,107 @@ if (templateConfig.createPreviewCertificates) {
   certsPreviewGlobal!.exportOutputs(growthosOutput);
 }
 
+export const cloudInfra = growthosOutput.getFlatOutputs();
 export const org = growthosOutput.getOutputs();
 ```
 
-### Example 1: Basic Usage with a Single Resource
+### Example: Recording a component
 
-This example demonstrates how to record a single GCP Storage Bucket.
+The idiomatic path is to build a component name-first and let it record itself.
 
 ```typescript
-import * as pulumi from '@pulumi/pulumi';
+import { CloudInfraAccount, CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+
+// Name-first construction: `new X("name", { domain, ...config })`.
+const sa = new CloudInfraAccount('my-app', { domain: 'au' });
+
+// The component records itself — for an Account this calls
+// `out.record("gcp:serviceaccount:Account", "my-app", meta, serviceAccount)`.
+sa.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs();
+export const org = out.getOutputs();
+```
+
+### Recording a raw resource (no component wrapper)
+
+If a resource has no CloudInfra component, you can record it directly. `record()` takes a resource type, a grouping key, a `CloudInfraMeta`, and a Pulumi resource.
+
+```typescript
 import * as gcp from '@pulumi/gcp';
-import { CloudInfraMeta } from '@mutinex/cloud-infra';
-import { CloudInfraOutput } from '@mutinex/cloud-infra';
+import { CloudInfraMeta, CloudInfraOutput } from '@mutinex/cloud-infra';
 
-// 1. Initialize the output manager with a schema version.
-const outputManager = new CloudInfraOutput();
+const out = new CloudInfraOutput();
 
-// 2. Define metadata for your resource.
-const meta = new CloudInfraMeta({
-  name: 'website-assets',
-  domain: 'au', // Corresponds to 'australia-southeast1'
-});
+const meta = new CloudInfraMeta({ name: 'website-assets', domain: 'au' });
 
-// 3. Create a Pulumi resource.
 const bucket = new gcp.storage.Bucket(meta.getName(), {
   location: meta.getLocation(),
-  website: {
-    mainPageSuffix: 'index.html',
-  },
 });
 
-// 4. Record the resource output.
-outputManager.record(
-  'storage-bucket', // Resource type identifier
-  'static-site', // Grouping key
-  meta,
-  bucket
-);
+// record(resourceType, groupingKey, meta, resource)
+out.record('gcp:storage:Bucket', 'static-site', meta, bucket);
 
-// 5. Export the collected outputs.
-export const outputs = outputManager.getOutputs();
+export const cloudInfra = out.getFlatOutputs();
+export const org = out.getOutputs();
 ```
 
-### Example 2: Recording Multiple Resources of the Same Type
+## API
 
-You can record several resources of the same type by using different grouping keys.
+### `record(resourceType, groupingKey, meta, resource): void`
 
-```typescript
-import * as pulumi from '@pulumi/pulumi';
-import * as gcp from '@pulumi/gcp';
-import { CloudInfraMeta } from '@mutinex/cloud-infra';
-import { CloudInfraOutput } from '@mutinex/cloud-infra';
+Records a resource on both wires. `resourceType` categorises the resource (use the full Pulumi type token, e.g. `"gcp:serviceaccount:Account"`, so flat-wire `type` matches the reference reader's alias table), `groupingKey` groups resources of the same type (e.g. `"primary"`), `meta` supplies the domain via `meta.getDomain()`, and `resource` is the Pulumi resource.
 
-const outputManager = new CloudInfraOutput();
+### `getFlatOutputs(): FlatOutputRecord[]`
 
-// Metadata for the primary service account
-const primaryMeta = new CloudInfraMeta({ name: 'app-runner', domain: 'us' });
-const primaryAccount = new gcp.serviceaccount.Account(primaryMeta.getName(), {
-  displayName: 'Primary Application Service Account',
-});
+Returns the **v2 flat wire**: an array of self-describing records, in `record()` insertion order. Each `FlatOutputRecord` extends `OutputResourceEntry` (the resource fields) and adds the inline addressing:
 
-// Metadata for the read-only service account
-const readOnlyMeta = new CloudInfraMeta({ name: 'app-reader', domain: 'us' });
-const readOnlyAccount = new gcp.serviceaccount.Account(readOnlyMeta.getName(), {
-  displayName: 'Read-Only Service Account',
-});
+| Field    | Meaning                                                            |
+| :------- | :---------------------------------------------------------------- |
+| `key`    | The grouping key the resource was recorded under.                 |
+| `type`   | The resource type, e.g. `"gcp:serviceaccount:Account"`.           |
+| `domain` | The domain (from `meta.getDomain()`), e.g. `"au"`.                |
+| `id`     | Always present.                                                   |
+| `name`, `email`, `member`, `projectId`, `roleId`, `location`, `uri`, `address`, `number`, `version`, `urls`, `customPlacementConfig` | Included only when defined on the source resource. |
 
-// Record both service accounts under the same resource type
-outputManager.record('service-account', 'primary', primaryMeta, primaryAccount);
-outputManager.record(
-  'service-account',
-  'read-only',
-  readOnlyMeta,
-  readOnlyAccount
-);
+### `getOutputs(): Record<domain, Record<resourceType, Record<groupingKey, OutputResourceEntry>>>`
 
-export const outputs = outputManager.getOutputs();
-```
-
-### Example 3: Recording Different Resource Types
-
-The manager can handle various resource types, organizing them under their respective domains.
-
-```typescript
-import * as pulumi from '@pulumi/pulumi';
-import * as gcp from '@pulumi/gcp';
-import { CloudInfraMeta } from '@mutinex/cloud-infra';
-import { CloudInfraOutput } from '@mutinex/cloud-infra';
-
-const outputManager = new CloudInfraOutput();
-
-// --- Australian Resources ---
-const metaAU = new CloudInfraMeta({ domain: 'au' });
-
-const bucket = new gcp.storage.Bucket(metaAU.getName('data-lake'), {
-  location: metaAU.getLocation(),
-});
-outputManager.record('storage-bucket', 'data-lake', metaAU, bucket);
-
-// --- US Resources ---
-const metaUS = new CloudInfraMeta({ domain: 'us' });
-
-const projectService = new gcp.projects.Service(metaUS.getName('iam-api'), {
-  service: 'iam.googleapis.com',
-});
-outputManager.record('project-service', 'iam', metaUS, projectService);
-
-export const outputs = outputManager.getOutputs();
-```
+Returns the **legacy nested wire**. Retained for back-compat; still emitted on every `record()`. New consumers should read the flat wire.
 
 ## Output Structure
 
-When the Pulumi program is deployed, the exported `outputs` will have a structure similar to the following. This example corresponds to the result of "Example 2".
+### Flat wire (`getFlatOutputs()`)
+
+The flat wire is an array. A service account recorded as `record("gcp:serviceaccount:Account", "primary", metaUs, sa)` produces an element like:
+
+```json
+[
+  {
+    "key": "primary",
+    "type": "gcp:serviceaccount:Account",
+    "domain": "us",
+    "id": "projects/your-gcp-project/serviceAccounts/...",
+    "name": "your-pulumi-project-app-runner-us",
+    "email": "your-pulumi-project-app-runner-us@your-gcp-project.iam.gserviceaccount.com",
+    "projectId": "your-gcp-project"
+  }
+]
+```
+
+### Nested wire (`getOutputs()`, legacy)
+
+The same recording on the nested wire nests the addressing into the object path:
 
 ```json
 {
   "us": {
-    "service-account": {
+    "gcp:serviceaccount:Account": {
       "primary": {
         "id": "projects/your-gcp-project/serviceAccounts/...",
         "name": "your-pulumi-project-app-runner-us",
         "email": "your-pulumi-project-app-runner-us@your-gcp-project.iam.gserviceaccount.com",
-        "projectId": "your-gcp-project"
-      },
-      "read-only": {
-        "id": "projects/your-gcp-project/serviceAccounts/...",
-        "name": "your-pulumi-project-app-reader-us",
-        "email": "your-pulumi-project-app-reader-us@your-gcp-project.iam.gserviceaccount.com",
         "projectId": "your-gcp-project"
       }
     }
@@ -220,4 +221,4 @@ When the Pulumi program is deployed, the exported `outputs` will have a structur
 }
 ```
 
-This structured output can then be easily consumed by other Pulumi stacks using `pulumi.StackReference`.
+Both wires can be consumed downstream by `@mutinex/cloud-infra/core/reference`. The flat wire is read with `new CloudInfraReference(stack, { flat: true })`; the nested wire is the default.
