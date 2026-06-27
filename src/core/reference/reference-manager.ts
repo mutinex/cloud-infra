@@ -89,22 +89,13 @@ export class CloudInfraReference {
    * Caches `pulumi.StackReference` instances to avoid creating duplicates for
    * the same stack within a single Pulumi program. The cache key is the
    * fully-qualified stack name.
+   *
+   * A plain unbounded `Map` (no eviction): a real Pulumi program references a
+   * handful of stacks, so the entry count is tiny and bounded by the program
+   * itself. The former hand-rolled LRU added no value here.
    * @private
    */
   private static stackRefCache = new Map<string, pulumi.StackReference>();
-
-  /**
-   * Maximum number of cached stack references. When exceeded, the least recently
-   * used entries will be evicted.
-   * @private
-   */
-  private static readonly maxCacheSize = 100;
-
-  /**
-   * Track access order for LRU eviction
-   * @private
-   */
-  private static cacheAccessOrder: string[] = [];
 
   /**
    * Generates a unique, collision-resistant name for a StackReference.
@@ -131,35 +122,6 @@ export class CloudInfraReference {
   }
 
   /**
-   * Updates the LRU access order for cache management
-   * @param key - The cache key that was accessed
-   * @private
-   */
-  private static updateAccessOrder(key: string): void {
-    const index = this.cacheAccessOrder.indexOf(key);
-    if (index > -1) {
-      this.cacheAccessOrder.splice(index, 1);
-    }
-    this.cacheAccessOrder.push(key);
-  }
-
-  /**
-   * Evicts the least recently used cache entries if the cache size exceeds the maximum
-   * @private
-   */
-  private static evictIfNeeded(): void {
-    while (
-      this.stackRefCache.size >= this.maxCacheSize &&
-      this.cacheAccessOrder.length > 0
-    ) {
-      const lruKey = this.cacheAccessOrder.shift();
-      if (lruKey) {
-        this.stackRefCache.delete(lruKey);
-      }
-    }
-  }
-
-  /**
    * Retrieves a `pulumi.StackReference` from the cache or creates a new one
    * if it doesn't exist. This ensures that multiple `CloudInfraReference` instances
    * pointing to the same stack reuse the same underlying `StackReference` object.
@@ -172,18 +134,13 @@ export class CloudInfraReference {
   public static getStackRef(stack: string): pulumi.StackReference {
     const cached = this.stackRefCache.get(stack);
     if (cached) {
-      this.updateAccessOrder(stack);
       return cached;
     }
-
-    // Evict LRU entries if needed before adding new one
-    this.evictIfNeeded();
 
     const safeName = this.generateSafeName(stack);
     const ref = new pulumi.StackReference(safeName, { name: stack });
 
     this.stackRefCache.set(stack, ref);
-    this.updateAccessOrder(stack);
 
     return ref;
   }
@@ -195,7 +152,6 @@ export class CloudInfraReference {
    */
   public static clearCache(): void {
     this.stackRefCache.clear();
-    this.cacheAccessOrder = [];
   }
 
   /**

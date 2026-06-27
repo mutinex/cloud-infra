@@ -63,23 +63,7 @@ describe("CloudInfraReference Caching", () => {
       expect(CloudInfraReference.getCacheSize()).toBe(3);
     });
 
-    it("should evict LRU entries when cache is full", () => {
-      // Set MAX_CACHE_SIZE to a small value for testing
-      // Note: In real implementation, you'd make this configurable
-
-      // Create more references than MAX_CACHE_SIZE
-      for (let i = 0; i < 105; i++) {
-        new CloudInfraReference({
-          stack: `org/project/env${i}`,
-          domain: "au",
-        });
-      }
-
-      // Cache should not exceed MAX_CACHE_SIZE (100)
-      expect(CloudInfraReference.getCacheSize()).toBeLessThanOrEqual(100);
-    });
-
-    it("should update access order on cache hit", () => {
+    it("should reuse the same cache entry across constructions of one stack", () => {
       const stack1 = "org/project/env1";
       const stack2 = "org/project/env2";
 
@@ -89,10 +73,10 @@ describe("CloudInfraReference Caching", () => {
       // Create second reference
       new CloudInfraReference({ stack: stack2, domain: "au" });
 
-      // Access first reference again (moves it to end of LRU)
+      // Construct the first stack again (different domain, same stack)
       new CloudInfraReference({ stack: stack1, domain: "gl" });
 
-      // Both should still be cached
+      // Still only two distinct cached stacks (re-construction reuses).
       expect(CloudInfraReference.getCacheSize()).toBe(2);
     });
   });
