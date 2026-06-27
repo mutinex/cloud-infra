@@ -7,6 +7,10 @@ import { PulumiInputStringSchema } from '../../core/types';
 import { gcpConfig } from '../../config';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the Folder component. */
+export const FOLDER_TYPE = 'cloud-infra:folder:CloudInfraFolder';
 
 export const CloudInfraFolderExtrasSchema = z
   .object({
@@ -26,7 +30,7 @@ export type CloudInfraFolderConfig = Omit<
   cloudInfraTags?: pulumi.Input<string>[];
 };
 
-export class CloudInfraFolder {
+export class CloudInfraFolder extends CloudInfraComponent {
   private meta: CloudInfraMeta;
   private folder: gcp.organizations.Folder;
   private tagBindings: gcp.tags.TagBinding[] = [];
@@ -34,8 +38,19 @@ export class CloudInfraFolder {
 
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraFolderConfig = {}
+    cloudInfraConfig: CloudInfraFolderConfig = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceName = meta.getName();
+
+    super(
+      FOLDER_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing folder component', {
       component: 'folder',
       operation: 'constructor',
@@ -79,9 +94,14 @@ export class CloudInfraFolder {
     const protectFlag =
       folderArgsRaw.deletionProtection === false ? false : true;
 
+    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
+    // gcp.organizations.Folder has NO labels → plain opts (not childOpts).
+    // Preserve protect + replaceOnChanges exactly.
     this.folder = new gcp.organizations.Folder(componentName, folderArgs, {
       protect: protectFlag,
       replaceOnChanges: ['parent'],
+      parent: this,
+      aliases: [{ parent: pulumi.rootStackResource }],
     });
 
     if (cloudInfraTags) {
@@ -104,6 +124,10 @@ export class CloudInfraFolder {
         });
       });
     }
+
+    this.registerOutputs({
+      folder: this.folder,
+    });
   }
 
   public getFolder(): gcp.organizations.Folder {

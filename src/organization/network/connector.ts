@@ -13,6 +13,10 @@ import { CloudInfraOutput } from '../../core/output';
 import { assertSingleRegion } from '../../core/helpers';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the VPC Access Connector component. */
+export const CONNECTOR_TYPE = 'cloud-infra:network:CloudInfraConnector';
 
 export const CloudInfraConnectorConfigSchema = z
   .object({
@@ -41,7 +45,7 @@ export const CloudInfraConnectorConfigSchema = z
  * });
  * ```
  */
-export class CloudInfraConnector {
+export class CloudInfraConnector extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly config: gcp.vpcaccess.ConnectorArgs;
   private readonly connector: gcp.vpcaccess.Connector;
@@ -59,8 +63,17 @@ export class CloudInfraConnector {
   constructor(
     meta: CloudInfraMeta,
     config: gcp.vpcaccess.ConnectorArgs,
-    opts?: pulumi.CustomResourceOptions
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceName = meta.getName();
+    super(
+      CONNECTOR_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing VPC Access Connector component', {
       component: 'network-connector',
       operation: 'constructor',
@@ -87,19 +100,30 @@ export class CloudInfraConnector {
     this.resourceName = meta.getName();
 
     this.connector = this.createGcpConnector(this.config, opts);
+
+    this.registerOutputs({
+      connector: this.connector,
+    });
   }
 
   private createGcpConnector(
     config: gcp.vpcaccess.ConnectorArgs,
-    opts?: pulumi.CustomResourceOptions
+    opts?: pulumi.ComponentResourceOptions
   ): gcp.vpcaccess.Connector {
+    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
+    // gcp.vpcaccess.Connector has NO labels → plain opts (not childOpts).
+    // PRESERVE any caller opts (e.g. dependsOn / provider) by merging them in.
     const connector = new gcp.vpcaccess.Connector(
       this.resourceName,
       {
         region: this.region,
         ...config,
       },
-      opts
+      {
+        ...(opts ?? {}),
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
     );
 
     return connector;
