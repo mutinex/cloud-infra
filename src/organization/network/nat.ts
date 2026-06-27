@@ -16,7 +16,11 @@ import { assertSingleRegion } from '../../core/helpers';
 import { PulumiInputStringSchema } from '../../core/types';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the NAT component. */
 export const NAT_TYPE = 'cloud-infra:network:CloudInfraNat';
@@ -39,6 +43,19 @@ export interface CloudInfraNatConfig
   extends Omit<gcp.compute.RouterNatArgs, 'router'> {
   router: gcp.compute.RouterArgs;
 }
+
+/**
+ * Name-first construction args for `CloudInfraNat` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the NAT config ({@link CloudInfraNatConfig})
+ * into a single args object. The naming fields are resolved into a
+ * `CloudInfraMeta` internally (identical `generateName` output, Frozen Contract
+ * F1); the remaining fields are passed straight through as the config — the
+ * Router, RouterNat and Route all derive their names/opts from the meta + config
+ * exactly as the meta-first path.
+ */
+export type CloudInfraNatArgs = NamingArgs & CloudInfraNatConfig;
 
 /**
  * Creates a Google Cloud NAT gateway, which includes a Cloud Router and a
@@ -87,11 +104,54 @@ export class CloudInfraNat extends CloudInfraComponent {
    * @param cloudInfraConfig The configuration for the NAT gateway.
    * @param opts Optional Pulumi component resource options.
    */
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the NAT config are folded
+   * into a single args object; the name is resolved into a `CloudInfraMeta`
+   * internally with byte-identical naming (Frozen Contract F1). The Router,
+   * RouterNat and Route child names, parents, aliases and opts are derived
+   * exactly as the meta-first path.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraNatArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraNat(name, args, opts)`. Retained for backward compatibility;
+   * produces identical resources.
+   *
+   * @param meta The `CloudInfraMeta` instance to derive naming and region from.
+   * @param cloudInfraConfig The configuration for the NAT gateway.
+   * @param opts Optional Pulumi component resource options.
+   */
   constructor(
     meta: CloudInfraMeta,
     cloudInfraConfig: CloudInfraNatConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraNatArgs | CloudInfraNatConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // NAT config passed straight through (parsed + consumed UNCHANGED below by
+    // the Router, RouterNat and Route).
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: CloudInfraNatConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...config } =
+        argsOrConfig as CloudInfraNatArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      cloudInfraConfig = config as CloudInfraNatConfig;
+    } else {
+      meta = nameOrMeta;
+      cloudInfraConfig = argsOrConfig as CloudInfraNatConfig;
+    }
+
     const resourceName = meta.getName();
 
     super(

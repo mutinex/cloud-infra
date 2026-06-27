@@ -5,7 +5,11 @@ import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /**
  * @module
@@ -16,6 +20,18 @@ import { CloudInfraComponent } from '../../core/component';
 
 /** Pulumi type token for the Subnet component. */
 export const SUBNET_TYPE = 'cloud-infra:network:CloudInfraSubnet';
+
+/**
+ * Name-first construction args for `CloudInfraSubnet` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the Pulumi subnetwork args
+ * (`gcp.compute.SubnetworkArgs`) into a single args object. The naming fields
+ * are resolved into a `CloudInfraMeta` internally (identical `generateName`
+ * output, Frozen Contract F1); the remaining fields are passed straight through
+ * as the subnetwork config exactly as the meta-first path.
+ */
+export type CloudInfraSubnetArgs = NamingArgs & gcp.compute.SubnetworkArgs;
 
 /**
  * Creates a Google Cloud subnetwork with a name and region derived from
@@ -63,11 +79,55 @@ export class CloudInfraSubnet extends CloudInfraComponent {
    * `gcp.compute.SubnetworkArgs` but without the `region`.
    * @param opts Optional Pulumi resource options.
    */
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the subnetwork config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * The Subnetwork child name, parent, alias and opts are derived exactly as the
+   * meta-first path.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraSubnetArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraSubnet(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   *
+   * @param meta The `CloudInfraMeta` instance to derive naming and region from.
+   * @param config The configuration for the subnetwork, mirroring
+   * `gcp.compute.SubnetworkArgs` but without the `region`.
+   * @param opts Optional Pulumi resource options.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: gcp.compute.SubnetworkArgs,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraSubnetArgs | gcp.compute.SubnetworkArgs,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // subnetwork config passed straight through (consumed UNCHANGED below by the
+    // Subnetwork).
+    let meta: CloudInfraMeta;
+    let config: gcp.compute.SubnetworkArgs;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraSubnetArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest as gcp.compute.SubnetworkArgs;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as gcp.compute.SubnetworkArgs;
+    }
+
     const resourceName = meta.getName();
 
     super(

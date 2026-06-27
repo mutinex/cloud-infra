@@ -5,7 +5,11 @@ import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
 import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /**
  * Configuration for CloudRun service component.
@@ -18,6 +22,30 @@ export type CloudInfraCloudRunServiceConfig = Omit<
   location?: pulumi.Input<string>;
   project?: pulumi.Input<string>;
 };
+
+/**
+ * Name-first construction args for `CloudInfraCloudRunService` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the service config
+ * ({@link CloudInfraCloudRunServiceConfig}) into a single args object, so a
+ * service can be built as
+ * `new CloudInfraCloudRunService("api", { domain: "au", template: {...} })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the service config — both the Service and its NEG derive
+ * their names/opts from the meta + config exactly as the meta-first path.
+ *
+ * `location` is intentionally `Omit`ted from the config arm (mirroring the
+ * bucket proof, which Omits `project`/`location`): on the name-first surface the
+ * single {@link NamingArgs.location} drives BOTH the generated name AND the
+ * Service deployment region (via `deriveRegion(meta)`), so there is no separate,
+ * ambiguous `config.location`. Meta-first callers keep the legacy
+ * `config.location` override on {@link CloudInfraCloudRunServiceConfig}.
+ */
+export type CloudInfraCloudRunServiceArgs = NamingArgs &
+  Omit<CloudInfraCloudRunServiceConfig, 'location'>;
 
 /** Pulumi type token for the Cloud Run service component. */
 export const CLOUD_RUN_SERVICE_TYPE =
@@ -64,11 +92,50 @@ export class CloudInfraCloudRunService extends CloudInfraComponent {
   public readonly service: gcp.cloudrunv2.Service;
   public readonly networkEndpointGroup: gcp.compute.RegionNetworkEndpointGroup;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the service config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * The Service + NEG child names, parents, aliases, labels and opts are
+   * derived exactly as the meta-first path.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraCloudRunServiceArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraCloudRunService(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraCloudRunServiceConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraCloudRunServiceArgs | CloudInfraCloudRunServiceConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // service config passed straight through (consumed UNCHANGED below by both
+    // the Service and the NEG).
+    let meta: CloudInfraMeta;
+    let config: CloudInfraCloudRunServiceConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraCloudRunServiceArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraCloudRunServiceConfig;
+    }
+
     const resourceName = meta.getName();
 
     // Register the component node. Children parent under `this`; the

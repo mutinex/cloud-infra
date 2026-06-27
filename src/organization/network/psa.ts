@@ -14,7 +14,11 @@ import { CloudInfraOutput } from '../../core/output';
 import { PulumiInputStringSchema } from '../../core/types';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the PSA component. */
 export const PSA_TYPE = 'cloud-infra:network:CloudInfraPSA';
@@ -51,6 +55,20 @@ export interface CloudInfraPSAInputConfig
   reservedPeeringRanges: gcp.compute.GlobalAddressArgs[];
   service?: string;
 }
+
+/**
+ * Name-first construction args for `CloudInfraPSA` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the PSA config
+ * ({@link CloudInfraPSAInputConfig}) into a single args object. The naming
+ * fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the config — the GlobalAddress, Connection and optional
+ * Provider all derive their names/opts (incl. `dependsOn`/`provider` wiring)
+ * from the meta + config exactly as the meta-first path.
+ */
+export type CloudInfraPSAArgs = NamingArgs & CloudInfraPSAInputConfig;
 
 /**
  * Creates a Google Cloud Private Service Access (PSA) connection with a name
@@ -103,11 +121,54 @@ export class CloudInfraPSA extends CloudInfraComponent {
    * @param config The configuration for the PSA connection.
    * @param opts Optional Pulumi component resource options.
    */
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the PSA config are folded
+   * into a single args object; the name is resolved into a `CloudInfraMeta`
+   * internally with byte-identical naming (Frozen Contract F1). The
+   * GlobalAddress, Connection and optional Provider child names, parents,
+   * aliases and opts are derived exactly as the meta-first path.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraPSAArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraPSA(name, args, opts)`. Retained for backward compatibility;
+   * produces identical resources.
+   *
+   * @param meta The `CloudInfraMeta` instance to derive naming from.
+   * @param config The configuration for the PSA connection.
+   * @param opts Optional Pulumi component resource options.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraPSAInputConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraPSAArgs | CloudInfraPSAInputConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // PSA config passed straight through (parsed + consumed UNCHANGED below by
+    // the GlobalAddress, Connection and optional Provider).
+    let meta: CloudInfraMeta;
+    let config: CloudInfraPSAInputConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraPSAArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest as CloudInfraPSAInputConfig;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraPSAInputConfig;
+    }
+
     const resourceName = meta.getName();
 
     super(

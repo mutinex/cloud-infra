@@ -19,7 +19,11 @@ import { CloudInfraOutput } from '../../core/output';
 import { withDefaults, deriveRegion, omit } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the backend-service component. */
 export const BACKEND_SERVICE_TYPE = 'cloud-infra:backendservice:BackendService';
@@ -72,6 +76,22 @@ export type CloudInfraBackendServiceConfig =
     Partial<CloudInfraBackendServiceExtras>;
 
 /**
+ * Name-first construction args for `CloudInfraBackendService` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the backend-service config
+ * ({@link CloudInfraBackendServiceConfig}) into a single args object.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the config — the BackendService (or RegionBackendService)
+ * and the optional HealthCheck derive their names/opts from the meta + config
+ * exactly as the meta-first path.
+ */
+export type CloudInfraBackendServiceArgs = NamingArgs &
+  CloudInfraBackendServiceConfig;
+
+/**
  * Component that encapsulates a GCP Backend Service (global or regional). The
  * decision is made based on {@link CloudInfraMeta.getDomain} – domain `"gl"`
  * yields a global service, all others become regional.
@@ -104,11 +124,50 @@ export class CloudInfraBackendService extends CloudInfraComponent {
   /** Validated input name ensured to be a single string. */
   private readonly inputName: string;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the backend-service
+   * config are folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * The BackendService (or RegionBackendService) and optional HealthCheck child
+   * names, parents, aliases and opts are derived exactly as the meta-first path.
+   */
+  constructor(
+    name: string,
+    args?: CloudInfraBackendServiceArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraBackendService(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraBackendServiceConfig = {},
+    cloudInfraConfig?: CloudInfraBackendServiceConfig,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraBackendServiceArgs | CloudInfraBackendServiceConfig = {},
     opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // backend-service config passed straight through (consumed UNCHANGED below
+    // by the extras parse, the BackendService and the optional HealthCheck).
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: CloudInfraBackendServiceConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...config } =
+        argsOrConfig as CloudInfraBackendServiceArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      cloudInfraConfig = config;
+    } else {
+      meta = nameOrMeta;
+      cloudInfraConfig = argsOrConfig as CloudInfraBackendServiceConfig;
+    }
+
     const resourceName = meta.getName();
 
     // Register the component node. Children (backend service + optional health
