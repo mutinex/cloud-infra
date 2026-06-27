@@ -60,6 +60,13 @@ export abstract class CloudInfraComponent extends pulumi.ComponentResource {
   private static readonly LABEL_UNSUPPORTED_TYPES: ReadonlySet<string> =
     new Set([
       'gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup',
+      // SecretVersion / RegionalSecretVersion are transitive children of the
+      // Secret/RegionalSecret (parent: this.secret). The label transformation
+      // attached to the Secret via childOpts propagates to them, but the
+      // *Version resources have NO `labels` input and reject it with
+      // "Invalid or unknown key". Skip them.
+      'gcp:secretmanager/secretVersion:SecretVersion',
+      'gcp:secretmanager/regionalSecretVersion:RegionalSecretVersion',
     ]);
 
   /** The resolved, generated resource name shared by the component's children. */
