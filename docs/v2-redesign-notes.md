@@ -300,6 +300,24 @@ Proof chain beyond the gate: 493/493 tests green (golden F1–F4 incl. F3 IAM-na
 build clean, and a manual cross-check that all 11 `new gcp.*IAMMember(...)` constructor calls in
 `iam-binding.ts` are verbatim transcriptions of the deleted per-type builders. Net −314 LOC.
 
+### 9e. DX2 BULK name-first validation — all 3 stacks (2026-06-27, v2 @ `e73b21a`)
+
+Added name-first overloads to `CloudInfraBulkBucket` + `CloudInfraBulkAccount` (+ a `resolveMeta(names:
+string[], …)` overload); meta-first kept `@deprecated` and byte-unchanged (the constructor normalizes both
+forms to a `(meta, config)` pair, then runs the ORIGINAL body). Gated via the §6 runbook. **PASS — diffs
+byte-identical to the §9d baseline:** mtx/dev `+17 ~7 -1` / 93 unchanged (the `-1` is the same known
+`1customer` SA-IAMMember drift), mtx-org/prd `+25 ~5` / 34 unchanged, dataos/dev `+22 ~22` / 125 unchanged.
+ZERO replace anywhere. Critically, `CloudInfraBulkAccount` is LIVE meta-first in mtx/dev + dataos/dev and
+feeds the access-matrix (Trap 6 bulk-key → IAM binding names); all those bindings stayed `unchanged`,
+proving the input-name key embedding is preserved. +10 equivalence tests pin component-label / child-name /
+`getAccounts`-key / custom-override parity (440 → 450 green).
+
+**NOT done (deliberate):** the structural "kill single/bulk → `names.map(n => new Single(n))`" collapse from
+Move 2. `Single` is its own `CloudInfraComponent` URN node whereas bulk is ONE node with N children → the
+map-over-single form restructures the URN tree and forces mass replacement. Destructive + low value; the
+name-first parity (the real DX win) was achieved additively without it. If ever revisited, it requires a
+component-node-preserving design + a full zero-replace gate — do not attempt as a naive `.map`.
+
 ### Rollout caveats (carry forward)
 - **Provider drift interleaves with migration diffs.** Previews ran on gcp 8.41 vs deployed 8.36 —
   benign in-place updates (`configuredCapabilities: null`, extra custom-role permissions) appear

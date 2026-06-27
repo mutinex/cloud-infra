@@ -3,7 +3,7 @@
 > **This document IS your prompt. Read it top to bottom and adopt it.** It lets a fresh session
 > resume the program with zero loss. The authoritative *technical* record (Frozen Contract,
 > Trap List, validated label map, preview results) is `docs/v2-redesign-notes.md` — read it too.
-> Last updated: 2026-06-27. **Current trunk: branch `v2` @ `9a70a70`, 493 tests green.**
+> Last updated: 2026-06-27. **Current trunk: branch `v2` @ `e73b21a`, 450 tests green.**
 >
 > ⚠️ **Where the real work lives:** the program runs on the long-lived **`v2`** branch, NOT
 > `main`. Use the integrator worktree **`/Users/nik.zavgorodny/Dev/cloud-infra-wt-v2trunk`**
@@ -28,9 +28,24 @@
   PROD); the only IAM op anywhere was the known-benign `1customer` SA-IAMMember delete in mtx/dev.
   Net −314 LOC. (Gate detail logged in §9c of `docs/v2-redesign-notes.md`.)
 
-**→ The next real milestone is the SHIP decision (§7) — the user's call.** Everything below the line
-remains PREVIEW-ONLY; nothing has been applied. DX2 (single/bulk) and docs/test sprawl stay deferred
-(§7). If resuming with no new user direction: confirm whether to proceed to SHIP, or stop here.
+✅ **Deferred cleanup + DX2 also DONE & merged (@ `e73b21a`).**
+- **Cleanup:** deleted the 9 `dx1-*.equivalence.test.ts` name-first scaffolding files (golden net F1–F4 +
+  `dx1-args-no-collision` kept); fixed stale docs across ~20 component READMEs + `core`/`access-matrix`
+  READMEs (meta-first→name-first examples, removed-framework refs) and stale access-matrix code comments.
+  Test count 493 → 440. No production behavior touched (no gate needed).
+- **DX2 (name-first for the two BULK components):** added name-first overloads to `CloudInfraBulkBucket`
+  + `CloudInfraBulkAccount` (+ a `resolveMeta(names: string[], …)` overload); meta-first kept `@deprecated`
+  and byte-unchanged. Pinned by +10 equivalence tests (440 → 450). **Preview gate PASSED** — diffs byte-
+  identical to baseline on all 3 stacks; the `CloudInfraBulkAccount`-fed IAM bindings (Trap 6 bulk-key, live
+  in mtx/dev + dataos/dev) all stayed `unchanged`. (Gate detail in §9d/§9e of the redesign notes.)
+- **NOT done — deliberately:** the structural "kill single/bulk → `names.map(n => new Single(n))`" collapse
+  (redesign-notes Move 2). Each `Single` is its own `CloudInfraComponent` URN node; bulk is ONE node with N
+  children — mapping over singles restructures the URN tree → mass replace. Destructive, low value; left
+  alone. Name-first parity (the actual DX win) is achieved without it.
+
+**→ The next real milestone is the SHIP decision (§7) — the user's call.** Everything remains
+PREVIEW-ONLY; nothing has been applied. If resuming with no new user direction: confirm whether to
+proceed to SHIP (§7), or stop here.
 
 The original collapse spec + traps are retained in §5 for audit; the work cycle / merge model below
 (§§1–3, 6) still governs any further structural change.
@@ -74,7 +89,7 @@ preview gate (needs creds agents lack) and does the merge.
 - **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
   AND committed on `v2`. Keep both updated.
 
-## 4. CURRENT STATE (v2 @ 9a70a70, 493 green — all PREVIEW-ONLY, no apply ever run)
+## 4. CURRENT STATE (v2 @ e73b21a, 450 green — all PREVIEW-ONLY, no apply ever run)
 MERGED & validated:
 - **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
   (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases
@@ -118,7 +133,9 @@ output proven via the mandatory zero-replace preview gate.
 4. `pulumi preview` ONLY. NEVER up/apply/destroy/refresh.
 
 ## 7. DEFERRED + THE SHIP DECISION (user's call)
-- **DEFERRED:** DX2 (collapse single/bulk — state-sensitive bulk-key, Trap 6, low value); docs/test sprawl.
+- **DONE (was deferred):** DX2 name-first for the two BULK components (gate-passed, byte-identical);
+  docs/test sprawl cleanup. See §0. The structural single/bulk *class collapse* (map-over-single) was
+  deliberately NOT done — it's URN-restructuring/destructive, low value (§0).
 - **SHIP (pending, user-authorized only):** publish `v2` + migrate consumers (gcp-organization
   mtx/mtx-org/mtx-apps; monorepo pkgs growthos/platform/dataos) via a codemod. **Codemod sharp-edges:**
   (1) `gcpProject` → config `project:` field; (2) **`location` foot-gun** — name-first fuses
