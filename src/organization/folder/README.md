@@ -19,7 +19,7 @@ A high-level wrapper around `gcp.organizations.Folder` that applies CloudInfra c
 import { CloudInfraFolder } from '@mutinex/cloud-infra';
 
 const folder = new CloudInfraFolder('production', {
-  omitDomain: true,
+  naming: 'no-location',
   cloudInfraTags: ['tagValues/1234567890'],
   deletionProtection: true,
 });
@@ -35,14 +35,19 @@ The following examples are based on actual production organization structure:
 
 ```ts
 import {
+  CloudInfraMeta,
   CloudInfraFolder,
   CloudInfraTag,
 } from '@mutinex/cloud-infra';
 
 // Environment Tag for governance
-export const environmentTags = new CloudInfraTag('env', {
+const environmentTagsMeta = new CloudInfraMeta({
+  name: 'env',
   omitPrefix: true,
   omitDomain: true,
+});
+
+export const environmentTags = new CloudInfraTag(environmentTagsMeta, {
   description: 'The Environment',
   values: [
     {
@@ -66,23 +71,20 @@ export const environmentTags = new CloudInfraTag('env', {
 
 // Parent Folder (top-level organization)
 export const parentFolder = new CloudInfraFolder('my-org', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   deletionProtection: false,
 });
 
 // Base Infrastructure Folder
 export const baseFolder = new CloudInfraFolder('base', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   parent: parentFolder.getFolder().id,
   deletionProtection: false,
 });
 
 // Application Workloads Folder
 export const orgFolder = new CloudInfraFolder('org', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   parent: parentFolder.getFolder().id,
   deletionProtection: false,
 });

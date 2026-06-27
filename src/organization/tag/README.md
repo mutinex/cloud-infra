@@ -16,10 +16,14 @@ A high-level wrapper around `gcp.tags.TagKey` and `gcp.tags.TagValue` that creat
 ## Quick Example
 
 ```ts
-import { CloudInfraTag } from '@mutinex/cloud-infra';
+import { CloudInfraMeta, CloudInfraTag } from '@mutinex/cloud-infra';
 
-const environmentTag = new CloudInfraTag('environment', {
+const environmentTagMeta = new CloudInfraMeta({
+  name: 'environment',
   omitDomain: true,
+});
+
+const environmentTag = new CloudInfraTag(environmentTagMeta, {
   description: 'Environment classification',
   values: [
     {
@@ -43,12 +47,16 @@ The following example is based on actual production tag management:
 ### Environment Tag for Organization Governance
 
 ```ts
-import { CloudInfraTag } from '@mutinex/cloud-infra';
+import { CloudInfraMeta, CloudInfraTag } from '@mutinex/cloud-infra';
 
 // Environment Tag for governance and billing
-export const environmentTags = new CloudInfraTag('env', {
+const environmentTagsMeta = new CloudInfraMeta({
+  name: 'env',
   omitPrefix: true,
   omitDomain: true,
+});
+
+export const environmentTags = new CloudInfraTag(environmentTagsMeta, {
   description: 'Mutinex Environment',
   values: [
     {
@@ -214,13 +222,13 @@ The `values` array is required and must contain at least one value:
 
 ```ts
 // ✅ Correct
-const tag = new CloudInfraTag('environment', {
+const tag = new CloudInfraTag(new CloudInfraMeta({ name: 'environment' }), {
   description: 'Environment tag',
   values: [{ shortName: 'dev', description: 'Development' }],
 });
 
 // ❌ Will throw ValidationError
-const tag = new CloudInfraTag('environment', {
+const tag = new CloudInfraTag(new CloudInfraMeta({ name: 'environment' }), {
   description: 'Environment tag',
   values: [], // Empty array not allowed
 });
@@ -237,7 +245,7 @@ The component provides detailed error messages for common issues:
 
 ```ts
 try {
-  const tag = new CloudInfraTag('environment', config);
+  const tag = new CloudInfraTag(new CloudInfraMeta({ name: 'environment' }), config);
 } catch (error) {
   if (error instanceof ValidationError) {
     console.error('Configuration error:', error.message);

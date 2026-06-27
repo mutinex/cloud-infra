@@ -34,7 +34,7 @@ The following examples are based on actual production role management:
 import { CloudInfraRole } from '@mutinex/cloud-infra';
 
 export const orgProjectAdmin = new CloudInfraRole('project-admin', {
-  omitDomain: true,
+  naming: 'no-location',
   orgId: 'YOUR_ORGANIZATION_ID',
   title: 'YourCompany Project Admin',
   description: 'YourCompany Project Admin',
@@ -72,7 +72,7 @@ export const orgProjectAdmin = new CloudInfraRole('project-admin', {
 
 ```ts
 export const orgViewer = new CloudInfraRole('viewer', {
-  omitDomain: true,
+  naming: 'no-location',
   orgId: 'YOUR_ORGANIZATION_ID',
   title: 'YourCompany Viewer',
   description: 'YourCompany Viewer',
@@ -104,7 +104,7 @@ export const orgViewer = new CloudInfraRole('viewer', {
 
 ```ts
 export const orgIamPolicyAdmin = new CloudInfraRole('iam-policy-admin', {
-  omitDomain: true,
+  naming: 'no-location',
   orgId: 'YOUR_ORGANIZATION_ID',
   title: 'YourCompany IAM Policy Admin',
   description: 'YourCompany IAM Policy Admin',
@@ -134,7 +134,7 @@ export const orgIamPolicyAdmin = new CloudInfraRole('iam-policy-admin', {
 export const orgOrganizationProvisioner = new CloudInfraRole(
   'organization-provisioner',
   {
-    omitDomain: true,
+    naming: 'no-location',
     orgId: 'YOUR_ORGANIZATION_ID',
     title: 'YourCompany Organization Provisioner',
     description: 'YourCompany Organization Provisioner',
@@ -193,7 +193,7 @@ export const orgOrganizationProvisioner = new CloudInfraRole(
 
 ```ts
 export const folderAdmin = new CloudInfraRole('simple-folder-admin', {
-  omitPrefix: true,
+  naming: 'no-prefix',
   title: 'Simple Folder Admin',
   roles: [
     'roles/resourcemanager.folderIamAdmin',
@@ -206,7 +206,7 @@ export const folderAdmin = new CloudInfraRole('simple-folder-admin', {
 
 ```ts
 export const extendedInvoker = new CloudInfraRole('extended-invoker', {
-  omitPrefix: true,
+  naming: 'no-prefix',
   projectId: pulumi.getProject(),
   title: 'Pub/Sub + Run Invoker',
   roles: [folderAdmin], // inherits perms from example 1

@@ -22,19 +22,24 @@ A high-level wrapper around `gcp.privilegedaccessmanager.Entitlement` that appli
 
 ```ts
 import {
+  CloudInfraMeta,
   CloudInfraEntitlement,
   CloudInfraRole,
 } from '@mutinex/cloud-infra';
 
 const supportRole = new CloudInfraRole('support', {
-  omitDomain: true,
+  naming: 'no-location',
   projectId: 'my-proj',
   title: 'Support',
   permissions: ['resourcemanager.projects.get'],
 });
 
-const entitlement = new CloudInfraEntitlement('support', {
+const entitlementMeta = new CloudInfraMeta({
+  name: 'support',
   omitDomain: true,
+});
+
+const entitlement = new CloudInfraEntitlement(entitlementMeta, {
   maxRequestDuration: '3600s',
   privilegedAccess: {
     gcpIamAccess: {
@@ -66,16 +71,21 @@ The following examples are based on actual usage patterns from production infras
 
 ```ts
 import {
+  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 import { orgIamPolicyAdmin } from './roles';
 import { orgDevId } from './refs';
 
+const orgDevIamPolicyAdminMeta = new CloudInfraMeta({
+  name: 'org-dev-iam-policy-admin',
+  omitDomain: true,
+  omitPrefix: true,
+});
+
 export const orgDevIamPolicyAdminEntitlement = new CloudInfraEntitlement(
-  'org-dev-iam-policy-admin',
+  orgDevIamPolicyAdminMeta,
   {
-    omitDomain: true,
-    omitPrefix: true,
     maxRequestDuration: '7200s',
     eligibleUsers: [
       {
@@ -104,16 +114,21 @@ export const orgDevIamPolicyAdminEntitlement = new CloudInfraEntitlement(
 
 ```ts
 import {
+  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 import { orgFolder } from './foldersTags';
 import { orgProjectAdmin } from './roles';
 
+const orgAdminMeta = new CloudInfraMeta({
+  name: 'org-admin',
+  omitDomain: true,
+  omitPrefix: true,
+});
+
 export const orgAdminEntitlement = new CloudInfraEntitlement(
-  'org-admin',
+  orgAdminMeta,
   {
-    omitDomain: true,
-    omitPrefix: true,
     maxRequestDuration: '7200s',
     eligibleUsers: [
       {
@@ -154,14 +169,19 @@ export const orgAdminEntitlement = new CloudInfraEntitlement(
 
 ```ts
 import {
+  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 
+const orgAdminDefaultMeta = new CloudInfraMeta({
+  name: 'big-red-button',
+  omitDomain: true,
+  omitPrefix: true,
+});
+
 export const orgAdminDefaultEntitlement = new CloudInfraEntitlement(
-  'big-red-button',
+  orgAdminDefaultMeta,
   {
-    omitDomain: true,
-    omitPrefix: true,
     maxRequestDuration: '7200s',
     eligibleUsers: [
       {
@@ -189,16 +209,21 @@ export const orgAdminDefaultEntitlement = new CloudInfraEntitlement(
 
 ```ts
 import {
+  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 import { parentFolder } from './foldersTags';
 import { orgIamPolicyAdmin } from './roles';
 
+const orgIamPolicyAdminMeta = new CloudInfraMeta({
+  name: 'org-iam-policy-admin',
+  omitDomain: true,
+  omitPrefix: true,
+});
+
 export const orgIamPolicyAdminEntitlement = new CloudInfraEntitlement(
-  'org-iam-policy-admin',
+  orgIamPolicyAdminMeta,
   {
-    omitDomain: true,
-    omitPrefix: true,
     maxRequestDuration: '3600s',
     eligibleUsers: [
       {

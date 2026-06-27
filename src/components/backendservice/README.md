@@ -12,7 +12,7 @@
 ## Quick reference
 
 ```ts
-import { CloudInfraBackendService } from '@mutinex/cloud-infra';
+import { CloudInfraMeta, CloudInfraBackendService } from '@mutinex/cloud-infra';
 ```
 
 - Constructor – `new CloudInfraBackendService(name, args?)`
@@ -26,29 +26,40 @@ import { CloudInfraBackendService } from '@mutinex/cloud-infra';
 ### 1. Global backend with Cloud Run integration
 
 ```ts
-const apiGlobalBackendService = new CloudInfraBackendService('api-default', {
+const apiGlobalBackendServiceMeta = new CloudInfraMeta({
+  name: 'api-default',
   omitDomain: true,
   gcpProject: 'my-project',
   preview: 'dev',
-  project: 'my-project',
-  backends: [
-    {
-      group: apiAuService.getNetworkEndpointGroup().id,
-    },
-  ],
-  healthCheck: {
-    requestPath: '/health',
-    port: 8080,
-  },
 });
+
+const apiGlobalBackendService = new CloudInfraBackendService(
+  apiGlobalBackendServiceMeta,
+  {
+    project: 'my-project',
+    backends: [
+      {
+        group: apiAuService.getNetworkEndpointGroup().id,
+      },
+    ],
+    healthCheck: {
+      requestPath: '/health',
+      port: 8080,
+    },
+  }
+);
 ```
 
 ### 2. Regional backend with health check
 
 ```ts
-const regionalBackend = new CloudInfraBackendService('frontend', {
+const regionalBackendMeta = new CloudInfraMeta({
+  name: 'frontend',
   domain: 'au',
   gcpProject: 'my-project',
+});
+
+const regionalBackend = new CloudInfraBackendService(regionalBackendMeta, {
   backends: [{ group: frontendService.getNetworkEndpointGroup().id }],
   healthCheck: {
     requestPath: '/health',

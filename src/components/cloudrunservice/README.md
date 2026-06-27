@@ -29,7 +29,7 @@ import { CloudInfraCloudRunService } from '@mutinex/cloud-infra';
 export const apiAuService = new CloudInfraCloudRunService('api', {
   domain: 'au',
   location: 'australia-southeast1',
-  preview: previewName,
+  naming: { preview: previewName },
   project: gcpProjectId,
   deletionProtection: false,
   ingress: 'INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER',
@@ -71,7 +71,7 @@ export const apiAuService = new CloudInfraCloudRunService('api', {
 export const frontendAuService = new CloudInfraCloudRunService('frontend', {
   domain: 'au',
   location: 'australia-southeast1',
-  preview: previewName,
+  naming: { preview: previewName },
   project: gcpProjectId,
   deletionProtection: false,
   ingress: 'INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER',

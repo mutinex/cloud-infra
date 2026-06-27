@@ -11,7 +11,7 @@
 ## Quick reference
 
 ```ts
-import { CloudInfraComputeInstance } from '@mutinex/cloud-infra';
+import { CloudInfraMeta, CloudInfraComputeInstance } from '@mutinex/cloud-infra';
 ```
 
 - Constructor – `new CloudInfraComputeInstance(name, config)`
@@ -25,63 +25,77 @@ import { CloudInfraComputeInstance } from '@mutinex/cloud-infra';
 ### 1. Basic web server instance
 
 ```ts
-export const webServerInstance = new CloudInfraComputeInstance('web-server', {
+const webServerInstanceMeta = new CloudInfraMeta({
+  name: 'web-server',
   domain: 'au',
   gcpProject: 'my-project',
-  machineType: 'e2-micro',
-  bootDisk: {
-    initializeParams: {
-      image: 'debian-cloud/debian-11',
+});
+
+export const webServerInstance = new CloudInfraComputeInstance(
+  webServerInstanceMeta,
+  {
+    machineType: 'e2-micro',
+    bootDisk: {
+      initializeParams: {
+        image: 'debian-cloud/debian-11',
+      },
     },
-  },
-  networkInterfaces: [
-    {
-      network: 'default',
-      accessConfigs: [{}], // Assigns external IP
-    },
-  ],
-  metadata: {
-    'startup-script': `#!/bin/bash
+    networkInterfaces: [
+      {
+        network: 'default',
+        accessConfigs: [{}], // Assigns external IP
+      },
+    ],
+    metadata: {
+      'startup-script': `#!/bin/bash
       apt-get update
       apt-get install -y nginx
       systemctl start nginx`,
-  },
-  tags: ['web-server', 'http-server'],
-});
+    },
+    tags: ['web-server', 'http-server'],
+  }
+);
 ```
 
 ### 2. Database instance with custom zone and service account
 
 ```ts
-export const databaseInstance = new CloudInfraComputeInstance('database', {
+const databaseInstanceMeta = new CloudInfraMeta({
+  name: 'database',
   domain: 'us',
   gcpProject: 'my-project',
-  zone: 'us-central1-b', // Override default zone
-  machineType: 'n1-standard-2',
-  bootDisk: {
-    initializeParams: {
-      image: 'ubuntu-os-cloud/ubuntu-2004-lts',
-      size: 50,
-    },
-  },
-  networkInterfaces: [
-    {
-      network: 'vpc-network',
-      subnetwork: 'private-subnet',
-      // No accessConfigs = internal IP only
-    },
-  ],
-  serviceAccount: {
-    email: serviceAccount.email,
-    scopes: ['cloud-platform'],
-  },
-  attachedDisks: [
-    {
-      source: dataDisk.name,
-      deviceName: 'data-disk',
-    },
-  ],
 });
+
+export const databaseInstance = new CloudInfraComputeInstance(
+  databaseInstanceMeta,
+  {
+    zone: 'us-central1-b', // Override default zone
+    machineType: 'n1-standard-2',
+    bootDisk: {
+      initializeParams: {
+        image: 'ubuntu-os-cloud/ubuntu-2004-lts',
+        size: 50,
+      },
+    },
+    networkInterfaces: [
+      {
+        network: 'vpc-network',
+        subnetwork: 'private-subnet',
+        // No accessConfigs = internal IP only
+      },
+    ],
+    serviceAccount: {
+      email: serviceAccount.email,
+      scopes: ['cloud-platform'],
+    },
+    attachedDisks: [
+      {
+        source: dataDisk.name,
+        deviceName: 'data-disk',
+      },
+    ],
+  }
+);
 ```
 
 ---

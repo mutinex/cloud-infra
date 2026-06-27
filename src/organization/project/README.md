@@ -24,7 +24,7 @@ import {
 
 // 1️⃣  Host Project – provides the Shared VPC
 const host = new CloudInfraHostProject('corp-host', {
-  omitDomain: true,
+  naming: 'no-location',
   folderId: '123456789012', // Place inside an existing folder
   cloudInfraTags: ['tagValues/5678901234567'],
   services: ['iam.googleapis.com', 'vpcaccess.googleapis.com'],
@@ -32,7 +32,7 @@ const host = new CloudInfraHostProject('corp-host', {
 
 // 2️⃣  Service Project – attaches to the host
 const svc = new CloudInfraServiceProject('analytics-dev', {
-  omitDomain: true,
+  naming: 'no-location',
   folderId: '123456789012',
   vpcHostProject: host.getProjectId(), // Attach to Shared VPC
   services: ['run.googleapis.com', 'secretmanager.googleapis.com'],
@@ -101,8 +101,7 @@ import { baseFolder, orgFolder, envTag } from './refs';
 export const sharedProjectName = `org-${pulumi.getStack()}`;
 
 export const baseProject = new CloudInfraHostProject(`org-base-${pulumi.getStack()}`, {
-  omitDomain: true,
-  omitPrefix: true,
+  naming: 'literal',
   folderId: baseFolder,
   deletionPolicy: 'DELETE',
   cloudInfraTags: [envTag],
@@ -117,8 +116,7 @@ export const baseProject = new CloudInfraHostProject(`org-base-${pulumi.getStack
 
 // Service Project for Application Workloads
 export const orgProject = new CloudInfraServiceProject(sharedProjectName, {
-  omitDomain: true,
-  omitPrefix: true,
+  naming: 'literal',
   folderId: orgFolder,
   deletionPolicy: 'DELETE',
   vpcHostProject: baseProject.getProjectId(),

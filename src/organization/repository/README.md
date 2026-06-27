@@ -58,7 +58,7 @@ const growthosRepo: CloudInfraRepository | undefined =
         return new CloudInfraRepository('growthos', {
           domain: 'au',
           location: 'australia-southeast1',
-          omitPrefix: true,
+          naming: 'no-prefix',
           project: orgProject.getProjectId(),
         });
       })()
@@ -128,7 +128,7 @@ new CloudInfraRepository(name: string, config?: CloudInfraMetaInput & Partial<gc
 ```
 
 - **`name`** – Required resource name controlling naming (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
-- **`config`** – Meta options (`domain`, `location`, `prefix`, `omitPrefix`, …) plus any subset of Pulumi `RepositoryArgs` to fine-tune the resource.
+- **`config`** – Naming options (`domain`, `location`, `prefix`, `naming`, …) plus any subset of Pulumi `RepositoryArgs` to fine-tune the resource.
 
 ### Methods
 

@@ -98,8 +98,7 @@ const subnet = networkConfig.getObject<Record<string, string>>('network') ?? {};
 
 // Private Service Access for Cloud SQL
 export const psa = new CloudInfraPSA('psa', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   network: baseProject.getSharedVpcName(),
   reservedPeeringRanges: [
     {
@@ -164,8 +163,7 @@ export const vconUsC1 = new CloudInfraConnector(vconUsC1Meta, {
 // Proxy subnet for Application Load Balancer
 export const proxySubnetAuSe1 = new CloudInfraSubnet('proxy-au-se1', {
   domain: 'au',
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   location: 'australia-southeast1',
   project: baseProject.getProjectId(),
   purpose: 'REGIONAL_MANAGED_PROXY',
@@ -181,7 +179,7 @@ export const proxySubnetAuSe1 = new CloudInfraSubnet('proxy-au-se1', {
 // Australia Southeast 1 subnet
 export const subnetAuSe1 = new CloudInfraSubnet('subnet', {
   domain: 'au',
-  omitPrefix: true,
+  naming: 'no-prefix',
   location: 'australia-southeast1',
   project: baseProject.getProjectId(),
   network: baseProject.getSharedVpcName(),
@@ -191,7 +189,7 @@ export const subnetAuSe1 = new CloudInfraSubnet('subnet', {
 // US Central 1 subnet
 export const subnetUsC1 = new CloudInfraSubnet('subnet', {
   domain: 'us',
-  omitPrefix: true,
+  naming: 'no-prefix',
   location: 'us-central1',
   project: baseProject.getProjectId(),
   network: baseProject.getSharedVpcName(),

@@ -82,7 +82,7 @@ export const apiEmail = apiAccount.emails.api;
 ```ts
 export const schedulerAccount = new CloudInfraAccount('scheduler', {
   domain: 'gl', // global domain (no region suffix)
-  omitDomain: true, // omit the domain part in the generated name
+  naming: 'no-location', // omit the domain part in the generated name
   description: 'Job Scheduler service account',
   disabled: true,
 });
@@ -137,14 +137,15 @@ export const frontendMemberUs = saUs.members.frontend;
 
 ```ts
 // When you need to use names that violate GCP's strict naming rules
-export const specialAccount = new CloudInfraAccount(
-  'very-long-service-account-name-that-exceeds-normal-limits',
-  {
-    domain: 'gl',
-    overrideNamingRules: true, // ⚠️ Use with caution!
-    description: 'Legacy account with non-standard naming',
-  }
-);
+const specialAccountMeta = new CloudInfraMeta({
+  name: 'very-long-service-account-name-that-exceeds-normal-limits',
+  domain: 'gl',
+  overrideNamingRules: true, // ⚠️ Use with caution!
+});
+
+export const specialAccount = new CloudInfraAccount(specialAccountMeta, {
+  description: 'Legacy account with non-standard naming',
+});
 ```
 
 ### 6. Organization-level accounts with custom descriptions

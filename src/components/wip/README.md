@@ -22,16 +22,14 @@ import { hostProject } from './projects'; // existing Host/Service project
 
 // 1️⃣ Create (or import) a Workload Identity Pool in the host project
 const ghaPool = new CloudInfraWIP('github', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   project: hostProject.getProjectId(),
   displayName: 'GitHub Actions Pool',
 });
 
 // 2️⃣ Add an OIDC provider that trusts `token.actions.githubusercontent.com`
 const ghaProvider = new CloudInfraWIPProvider('github', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   project: hostProject.getProjectId(),
   workloadIdentityPoolId: ghaPool.getId(),
   displayName: 'GitHub OIDC Provider',
@@ -80,16 +78,14 @@ import { ghaAccounts, organizationGhaAccounts } from './accounts';
 
 // Create Workload Identity Pool for GitHub Actions
 const ghaWip = new CloudInfraWIP('github', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   project: baseProject.getProjectId(),
   displayName: `GitHub Actions Pool`,
 });
 
 // Create OIDC Provider with comprehensive attribute mapping
 export const ghaWipProvider = new CloudInfraWIPProvider('github', {
-  omitPrefix: true,
-  omitDomain: true,
+  naming: 'literal',
   project: baseProject.getProjectId(),
   workloadIdentityPoolId: ghaWip.getId(),
   displayName: `GitHub Actions Provider`,
