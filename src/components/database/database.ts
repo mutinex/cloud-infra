@@ -8,6 +8,10 @@ import { CloudInfraOutput } from '../../core/output';
 
 // Error handling
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the Cloud SQL database component. */
+export const DATABASE_TYPE = 'cloud-infra:database:Database';
 
 /**
  * Cloud SQL **database** component.
@@ -34,11 +38,25 @@ export type CloudInfraDatabaseConfig = Omit<
 /**
  * Component representing a single database inside an existing Cloud SQL instance.
  */
-export class CloudInfraDatabase {
+export class CloudInfraDatabase extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly database: gcp.sql.Database;
 
-  constructor(meta: CloudInfraMeta, config: CloudInfraDatabaseConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraDatabaseConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const resourceName = meta.getName();
+
+    super(
+      DATABASE_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     // ALWAYS log initialization first
     CloudInfraLogger.info('Initializing database component', {
       component: 'database',
@@ -46,7 +64,6 @@ export class CloudInfraDatabase {
     });
 
     this.meta = meta;
-    const resourceName = meta.getName();
 
     // Validate single name input
     const inputName = meta.getInputName();
@@ -74,8 +91,16 @@ export class CloudInfraDatabase {
       project: config.project ?? meta.getGcpProject(), // ALWAYS use meta fallback
     };
 
-    // Create the resource - one line, no ceremony
-    this.database = new gcp.sql.Database(resourceName, databaseArgs);
+    // gcp.sql.Database has NO `labels` field → OMIT label stamping and use
+    // PLAIN opts (NOT childOpts). v1 created it FLAT → alias back to root.
+    this.database = new gcp.sql.Database(resourceName, databaseArgs, {
+      parent: this,
+      aliases: [{ parent: pulumi.rootStackResource }],
+    });
+
+    this.registerOutputs({
+      database: this.database,
+    });
   }
 
   /** Underlying database resource. */

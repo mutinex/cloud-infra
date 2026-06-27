@@ -9,6 +9,10 @@ import {
   GcpDualRegions,
 } from '../../core/meta/locations';
 import { CloudInfraBucketConfig } from './common';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the bulk-bucket component. */
+export const BULK_BUCKET_TYPE = 'cloud-infra:bucket:BulkBucket';
 
 /**
  * Creates a *set* of Storage buckets derived from a single
@@ -19,21 +23,38 @@ import { CloudInfraBucketConfig } from './common';
  * Bucket location logic and sensible defaults are identical to the single
  * component because they share the same factory helper.
  */
-export class CloudInfraBulkBucket {
+export class CloudInfraBulkBucket extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly buckets: Record<string, gcp.storage.Bucket> = {};
 
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: Record<string, unknown> = {}
+    cloudInfraConfig: Record<string, unknown> = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const names = meta.getNames();
+
+    // Bulk components have no single resource name; use a STABLE component
+    // label derived from the sorted input keys so the component node URN is
+    // deterministic. Child buckets keep their own byte-identical generated
+    // names (F1) and alias back to root individually.
+    const componentLabel = Object.keys(names).sort().join('-');
+
+    super(
+      BULK_BUCKET_TYPE,
+      componentLabel,
+      componentLabel,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing bulk bucket component', {
       component: 'bucket',
       operation: 'constructor',
     });
 
     this.meta = meta;
-    const names = meta.getNames();
+    // names computed above (shared with super()).
 
     // Per-bucket custom blocks
     const { custom = {}, ...commonConfig } = cloudInfraConfig as {
@@ -137,9 +158,22 @@ export class CloudInfraBulkBucket {
         bucketArgs.publicAccessPrevention = 'enforced';
       }
 
-      const bucket = new gcp.storage.Bucket(generatedName, bucketArgs);
+      // gcp.storage.Bucket supports `labels` → childOpts. Each bucket keeps
+      // its exact generated name (F1) and was created FLAT in v1, so each gets
+      // its own root-alias for in-place migration.
+      const bucket = new gcp.storage.Bucket(
+        generatedName,
+        bucketArgs,
+        this.childOpts({
+          aliases: [{ parent: pulumi.rootStackResource }],
+        })
+      );
       this.buckets[inputName] = bucket;
     }
+
+    this.registerOutputs({
+      buckets: this.buckets,
+    });
   }
 
   /** All bucket resources keyed by *input* name. */

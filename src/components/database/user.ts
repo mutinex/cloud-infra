@@ -17,6 +17,10 @@ import { CloudInfraOutput } from '../../core/output';
 
 // Error handling
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the Cloud SQL user component. */
+export const DATABASE_USER_TYPE = 'cloud-infra:database:DatabaseUser';
 
 /**
  * Configuration for DatabaseUser component.
@@ -32,18 +36,31 @@ export type CloudInfraDatabaseUserConfig = Omit<
 /**
  * Component that manages a single database user (standard or IAM).
  */
-export class CloudInfraDatabaseUser {
+export class CloudInfraDatabaseUser extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly user: gcp.sql.User;
 
-  constructor(meta: CloudInfraMeta, config: CloudInfraDatabaseUserConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraDatabaseUserConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const resourceName = meta.getName();
+
+    super(
+      DATABASE_USER_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing database-user component', {
       component: 'database-user',
       operation: 'constructor',
     });
 
     this.meta = meta;
-    const resourceName = meta.getName();
 
     const inputName = meta.getInputName();
     if (Array.isArray(inputName)) {
@@ -68,10 +85,18 @@ export class CloudInfraDatabaseUser {
       project: config.project ?? meta.getGcpProject(),
     };
 
-    // Create the resource - one line, no ceremony
+    // gcp.sql.User has NO `labels` field → OMIT label stamping and use PLAIN
+    // opts (NOT childOpts). v1 created it FLAT → alias back to root. Keep the
+    // existing `additionalSecretOutputs` so passwords stay secret in state.
     this.user = new gcp.sql.User(resourceName, userArgs, {
+      parent: this,
+      aliases: [{ parent: pulumi.rootStackResource }],
       // Make sure password values remain secret in state files.
       additionalSecretOutputs: ['password'],
+    });
+
+    this.registerOutputs({
+      user: this.user,
     });
   }
 

@@ -26,6 +26,7 @@ import { CloudInfraOutput } from '../../core/output';
 import { withDefaults } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
 
 export type CloudInfraRepositoryConfig = Omit<
   gcp.artifactregistry.RepositoryArgs,
@@ -36,15 +37,29 @@ export type CloudInfraRepositoryConfig = Omit<
   format?: pulumi.Input<string>;
 };
 
-export class CloudInfraRepository {
+/** Pulumi type token for the Artifact Registry repository component. */
+export const REPOSITORY_TYPE = 'cloud-infra:repository:Repository';
+
+export class CloudInfraRepository extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly repository: gcp.artifactregistry.Repository;
   private readonly inputName: string;
 
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraRepositoryConfig = {}
+    cloudInfraConfig: CloudInfraRepositoryConfig = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceName = meta.getName();
+
+    super(
+      REPOSITORY_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing repository component', {
       component: 'repository',
       operation: 'constructor',
@@ -89,10 +104,20 @@ export class CloudInfraRepository {
       repoArgsRaw as Partial<gcp.artifactregistry.RepositoryArgs>
     );
 
+    // v1 created the Repository FLAT (no parent). It now moves under this
+    // component; alias it back to the stack root so it migrates in-place.
+    // artifactregistry.Repository supports `labels` → use childOpts.
     this.repository = new gcp.artifactregistry.Repository(
       componentName,
-      repoArgs
+      repoArgs,
+      this.childOpts({
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
     );
+
+    this.registerOutputs({
+      repository: this.repository,
+    });
   }
 
   public getRepository(): gcp.artifactregistry.Repository {

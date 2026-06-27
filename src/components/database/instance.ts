@@ -11,6 +11,10 @@ import { ValidationError } from '../../core/errors';
 
 // Helpers
 import { deriveRegion } from '../../core/helpers';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the Cloud SQL instance component. */
+export const DATABASE_INSTANCE_TYPE = 'cloud-infra:database:DatabaseInstance';
 
 /**
  * Cloud SQL **instance** component.
@@ -50,18 +54,31 @@ export type CloudInfraDatabaseInstanceConfig = Omit<
  * });
  * ```
  */
-export class CloudInfraDatabaseInstance {
+export class CloudInfraDatabaseInstance extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly instance: gcp.sql.DatabaseInstance;
 
-  constructor(meta: CloudInfraMeta, config: CloudInfraDatabaseInstanceConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraDatabaseInstanceConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const resourceName = meta.getName();
+
+    super(
+      DATABASE_INSTANCE_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing database-instance component', {
       component: 'database-instance',
       operation: 'constructor',
     });
 
     this.meta = meta;
-    const resourceName = meta.getName();
 
     const inputName = meta.getInputName();
     if (Array.isArray(inputName)) {
@@ -79,7 +96,18 @@ export class CloudInfraDatabaseInstance {
       region: config.region ?? deriveRegion(meta),
     };
 
-    this.instance = new gcp.sql.DatabaseInstance(resourceName, instanceArgs);
+    // gcp.sql.DatabaseInstance has NO top-level `labels` (only nested
+    // `settings.userLabels`), so we OMIT label stamping and use PLAIN opts
+    // (NOT childOpts) — injecting top-level labels would be a deploy hard-error.
+    // v1 created the instance FLAT → alias back to the stack root.
+    this.instance = new gcp.sql.DatabaseInstance(resourceName, instanceArgs, {
+      parent: this,
+      aliases: [{ parent: pulumi.rootStackResource }],
+    });
+
+    this.registerOutputs({
+      instance: this.instance,
+    });
   }
 
   /** Underlying Cloud SQL instance resource. */

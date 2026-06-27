@@ -9,6 +9,10 @@ import {
   GcpDualRegions,
 } from '../../core/meta/locations';
 import { CloudInfraBucketConfig } from './common';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the single-bucket component. */
+export const BUCKET_TYPE = 'cloud-infra:bucket:Bucket';
 
 /**
  * Single Google Cloud Storage bucket component.
@@ -36,7 +40,7 @@ import { CloudInfraBucketConfig } from './common';
  * const bucket = new CloudInfraBucket(meta, { forceDestroy: true });
  * ```
  */
-export class CloudInfraBucket {
+export class CloudInfraBucket extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly bucket: gcp.storage.Bucket;
   /** Validated single input name (array inputs are invalid for single bucket). */
@@ -44,8 +48,19 @@ export class CloudInfraBucket {
 
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraBucketConfig = {}
+    cloudInfraConfig: CloudInfraBucketConfig = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const componentName = meta.getName();
+
+    super(
+      BUCKET_TYPE,
+      componentName,
+      componentName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing bucket component', {
       component: 'bucket',
       operation: 'constructor',
@@ -54,7 +69,7 @@ export class CloudInfraBucket {
     this.meta = meta;
     const rawConfig = cloudInfraConfig;
 
-    const componentName = meta.getName();
+    // componentName computed above (shared with super()).
 
     // Ensure the component is used with a *single* name – for arrays the caller
     // should switch to `CloudInfraBulkBucket`.
@@ -169,7 +184,19 @@ export class CloudInfraBucket {
       bucketArgs.publicAccessPrevention = 'enforced';
     }
 
-    this.bucket = new gcp.storage.Bucket(componentName, bucketArgs);
+    // gcp.storage.Bucket supports `labels` → childOpts. v1 created it FLAT, so
+    // alias back to the stack root for in-place migration.
+    this.bucket = new gcp.storage.Bucket(
+      componentName,
+      bucketArgs,
+      this.childOpts({
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
+    );
+
+    this.registerOutputs({
+      bucket: this.bucket,
+    });
   }
 
   /** Underlying Pulumi bucket resource. */

@@ -8,6 +8,10 @@ import { ValidationError } from '../../core/errors';
 
 // Helpers - import as needed
 import { deriveRegion } from '../../core/helpers';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the Secret Manager secret+version component. */
+export const SECRET_VERSION_TYPE = 'cloud-infra:secret:SecretVersion';
 
 /**
  * Configuration for SecretVersion component.
@@ -47,7 +51,7 @@ export type CloudInfraSecretVersionConfig = {
  *
  * @packageDocumentation
  */
-export class CloudInfraSecretVersion {
+export class CloudInfraSecretVersion extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly secret:
     | gcp.secretmanager.Secret
@@ -56,7 +60,21 @@ export class CloudInfraSecretVersion {
     | gcp.secretmanager.SecretVersion
     | gcp.secretmanager.RegionalSecretVersion;
 
-  constructor(meta: CloudInfraMeta, config: CloudInfraSecretVersionConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraSecretVersionConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const resourceName = meta.getName();
+
+    super(
+      SECRET_VERSION_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     // ALWAYS log initialization first
     CloudInfraLogger.info('Initializing secret-version component', {
       component: 'secret-version',
@@ -64,7 +82,8 @@ export class CloudInfraSecretVersion {
     });
 
     this.meta = meta;
-    const resourceName = meta.getName();
+
+    // resourceName computed above (shared with super()).
 
     // Validate input name is single string
     const candidateInputName = meta.getInputName();
@@ -104,7 +123,15 @@ export class CloudInfraSecretVersion {
         },
       };
 
-      this.secret = new gcp.secretmanager.Secret(resourceName, secretArgs);
+      // Secret supports `labels` → childOpts. v1 created it FLAT, so alias
+      // back to the stack root for in-place migration.
+      this.secret = new gcp.secretmanager.Secret(
+        resourceName,
+        secretArgs,
+        this.childOpts({
+          aliases: [{ parent: pulumi.rootStackResource }],
+        })
+      );
     } else {
       const secretArgs: gcp.secretmanager.RegionalSecretArgs = {
         ...secretConfig,
@@ -113,9 +140,14 @@ export class CloudInfraSecretVersion {
         location: secretConfig.location ?? deriveRegion(meta),
       };
 
+      // RegionalSecret supports `labels` → childOpts. v1 created it FLAT, so
+      // alias back to the stack root for in-place migration.
       this.secret = new gcp.secretmanager.RegionalSecret(
         resourceName,
-        secretArgs
+        secretArgs,
+        this.childOpts({
+          aliases: [{ parent: pulumi.rootStackResource }],
+        })
       );
     }
 
@@ -125,6 +157,10 @@ export class CloudInfraSecretVersion {
       secretData: config.secretData,
     };
 
+    // SecretVersion / RegionalSecretVersion have NO `labels` field → plain
+    // opts (NOT childOpts). They already had `parent: this.secret` in v1; KEEP
+    // it and add NO explicit alias — parent-alias inheritance reconstructs the
+    // old URN once the parent Secret is aliased to root (proven on the NEG).
     if (isGlobal) {
       this.version = new gcp.secretmanager.SecretVersion(
         resourceName,
@@ -138,6 +174,11 @@ export class CloudInfraSecretVersion {
         { parent: this.secret }
       );
     }
+
+    this.registerOutputs({
+      secret: this.secret,
+      version: this.version,
+    });
   }
 
   /**
