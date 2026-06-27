@@ -16,7 +16,7 @@ import {
   resolveMeta,
   type NamingArgs,
 } from '../../core/component';
-import { Config } from '../../config';
+import { resourceNamingConfig } from '../../config';
 import { CloudInfraCertificateMapConfig, CertificateDefinition } from './types';
 
 /**
@@ -225,8 +225,7 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
         'sanitizeResourceName'
       );
     }
-    const globalConfig = Config.get();
-    const maxLength = globalConfig.resourceNaming?.certificateMaxLength || 32;
+    const maxLength = resourceNamingConfig.certificateMaxLength;
 
     return name
       .toLowerCase()

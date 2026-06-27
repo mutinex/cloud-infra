@@ -23,7 +23,7 @@ export * from './organization/pam';
 export * from './components/certificatemap';
 export * from './components/instance';
 export {
-  // Config objects that always reflect current config after Config.init()
+  // Configuration objects (live pulumi.Config readers + inlined constants).
   gcpConfig,
   accessMatrixConfig,
 } from './config';

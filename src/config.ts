@@ -1,69 +1,51 @@
 /**
- * Simple, centralized configuration for cloud infrastructure library
+ * Simple, centralized configuration for cloud infrastructure library.
+ *
+ * NOTE on the former `Config` singleton: it had an `init()` that was never
+ * called anywhere, so the mutable singleton always returned `defaultConfig`.
+ * It has been replaced with plain exported constants at their EXACT former
+ * default values. Two of these are part of the FROZEN naming contract and MUST
+ * NOT change:
+ *   - `accessMatrixConfig.maxResourceNameLength = 100` — access-matrix IAM-name
+ *     truncation (Frozen Contract F3).
+ *   - `resourceNamingConfig.certificateMaxLength = 32` — certificatemap name
+ *     sanitisation length.
+ *
+ * `gcpConfig` and `referenceConfig` read the LIVE `pulumi.Config` and are kept
+ * as lazy getters (they must not be inlined).
  */
 
 import * as pulumi from '@pulumi/pulumi';
 
-export interface CloudInfraConfig {
-  gcp?: {
-    organizationId: string;
-    billingAccountId: string;
-    organizationName: string;
-  };
-  accessMatrix: {
-    maxResourceNameLength: number;
-    enableDetailedLogging: boolean;
-    maxPrincipalsThreshold: number;
-    defaultOperationTimeout: number;
-  };
-  resourceNaming: {
-    maxLength: number;
-    certificateMaxLength: number;
-    folderMaxLength: number;
-    projectIdMaxLength: number;
-  };
-  reference?: {
-    defaultOutputKey: string;
-  };
-}
+/**
+ * Access-matrix tuning constants. Inlined from the former `Config` singleton's
+ * `defaultConfig.accessMatrix` at byte-identical values.
+ *
+ * `maxResourceNameLength` is FROZEN at 100 (Frozen Contract F3 — IAM resource
+ * name truncation in `access-matrix/core/policy-rule-processor.ts`).
+ */
+export const accessMatrixConfig = {
+  /** FROZEN (F3): IAM resource-name truncation length. */
+  maxResourceNameLength: 100,
+  enableDetailedLogging: true,
+  maxPrincipalsThreshold: 100,
+  defaultOperationTimeout: 30000,
+} as const;
 
-const defaultConfig: CloudInfraConfig = {
-  accessMatrix: {
-    maxResourceNameLength: 100,
-    enableDetailedLogging: true,
-    maxPrincipalsThreshold: 100,
-    defaultOperationTimeout: 30000,
-  },
-  resourceNaming: {
-    maxLength: 63,
-    certificateMaxLength: 32,
-    folderMaxLength: 30,
-    projectIdMaxLength: 30,
-  },
-};
-
-export class Config {
-  private static config: CloudInfraConfig = defaultConfig;
-
-  static init(externalConfig: Partial<CloudInfraConfig>): void {
-    this.config = {
-      ...(externalConfig.gcp && { gcp: externalConfig.gcp }),
-      accessMatrix: {
-        ...defaultConfig.accessMatrix,
-        ...externalConfig.accessMatrix,
-      },
-      resourceNaming: {
-        ...defaultConfig.resourceNaming,
-        ...externalConfig.resourceNaming,
-      },
-      ...(externalConfig.reference && { reference: externalConfig.reference }),
-    };
-  }
-
-  static get(): CloudInfraConfig {
-    return this.config;
-  }
-}
+/**
+ * Resource-naming length constants. Inlined from the former `Config`
+ * singleton's `defaultConfig.resourceNaming` at byte-identical values.
+ *
+ * `certificateMaxLength` is the only one read at runtime today (certificatemap
+ * name sanitisation); the others are retained at their exact former defaults.
+ */
+export const resourceNamingConfig = {
+  maxLength: 63,
+  /** certificatemap `sanitizeResourceName` truncation length. */
+  certificateMaxLength: 32,
+  folderMaxLength: 30,
+  projectIdMaxLength: 30,
+} as const;
 
 export const gcpConfig = {
   get organizationId() {
@@ -115,21 +97,6 @@ To fix this error, add the following to your Pulumi configuration:
 
 Original error: ${error instanceof Error ? error.message : String(error)}`);
     }
-  },
-};
-
-export const accessMatrixConfig = {
-  get maxResourceNameLength() {
-    return Config.get().accessMatrix.maxResourceNameLength;
-  },
-  get enableDetailedLogging() {
-    return Config.get().accessMatrix.enableDetailedLogging;
-  },
-  get maxPrincipalsThreshold() {
-    return Config.get().accessMatrix.maxPrincipalsThreshold;
-  },
-  get defaultOperationTimeout() {
-    return Config.get().accessMatrix.defaultOperationTimeout;
   },
 };
 
