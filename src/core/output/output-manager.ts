@@ -3,6 +3,13 @@
  */
 import * as pulumi from '@pulumi/pulumi';
 import { CloudInfraMeta } from '../meta';
+import {
+  GcpMultiRegions,
+  GcpPredefinedDualRegions,
+  GcpDualRegionLocations,
+  getRegionCode,
+} from '../meta/locations';
+import { FLAT_KEY_SEPARATOR, getServiceAlias } from '../reference/config';
 
 /**
  * Defines the structure for a resource entry that can be recorded by the
@@ -96,57 +103,77 @@ export interface OutputResourceEntry {
 export type OutputResource = pulumi.CustomResource & OutputResourceEntry;
 
 /**
- * A flat, self-describing output record (Move 4 — flat outputs).
+ * Internal addressing record for one recorded resource. Carries the inline
+ * addressing (`key`/`type`/`domain`) plus the same resource fields as the
+ * nested {@link OutputResourceEntry}. This is kept as an internal bookkeeping
+ * shape that {@link CloudInfraOutput.getFlatOutputs} projects into the public
+ * flat KEYED MAP — it is no longer the public return type.
  *
- * This is the NEW, additive emission shape produced alongside the legacy nested
- * `data[domain][resourceType][groupingKey]` map. Each call to
- * {@link CloudInfraOutput.record} appends exactly one of these records to a
- * parallel flat collection, retrievable via
- * {@link CloudInfraOutput.getFlatOutputs}.
- *
- * Unlike the nested map — where the domain / resource-type / grouping-key live
- * in the object PATH — a flat record carries that addressing information INLINE
- * (`key`, `type`, `domain`) so a single array element fully describes itself.
- * This makes it trivial to consume downstream (filter / map over a flat list)
- * without walking three levels of nesting.
- *
- * The resource fields (`id`, `name`, `email`, …) use the SAME allow-list as the
- * nested {@link OutputResourceEntry} (see `buildResourceEntry`): `id` is always
- * present, `name` and the optional fields are included only when defined on the
- * source resource. Because outputs are stack metadata and NOT Pulumi resources,
- * this additive emission carries zero state risk on the producer.
- *
- * @example A flat record for a service account recorded as `("gcp:serviceaccount:Account", "my-app", meta, sa)`:
- * ```ts
- * {
- *   key: "my-app",
- *   type: "gcp:serviceaccount:Account",
- *   domain: "au",
- *   id: <Output<string>>,
- *   name: <Output<string>>,
- *   email: <Output<string>>,
- *   member: <Output<string>>,
- * }
- * ```
+ * @internal
  */
 export interface FlatOutputRecord extends OutputResourceEntry {
-  /**
-   * The grouping key the resource was recorded under (the nested map's
-   * third-level key). This is the primary lookup key for the flat reader.
-   */
+  /** The grouping key the resource was recorded under. */
   key: string;
-
-  /**
-   * The resource type the resource was recorded under (the nested map's
-   * second-level key), e.g. `"gcp:serviceaccount:Account"`.
-   */
+  /** The resource type, e.g. `"gcp:serviceaccount:Account"`. */
   type: string;
-
-  /**
-   * The domain the resource was recorded under (the nested map's top-level
-   * key), e.g. `"au"`, derived from `meta.getDomain()`.
-   */
+  /** The domain (from `meta.getDomain()`), e.g. `"au"`. */
   domain: string;
+}
+
+/**
+ * The SCALAR string fields of {@link OutputResourceEntry} that are emitted as
+ * individual top-level keys in the flat KEYED MAP. NON-scalar fields (`urls`
+ * array, `customPlacementConfig` object) are intentionally EXCLUDED — they
+ * cannot become a single `pulumi.Output<string>` and remain available only on
+ * the nested {@link CloudInfraOutput.getOutputs} wire.
+ *
+ * Order is deterministic (it fixes iteration order when composing keys).
+ */
+const FLAT_SCALAR_FIELDS = [
+  'id',
+  'name',
+  'roleId',
+  'email',
+  'location',
+  'member',
+  'uri',
+  'projectId',
+  'address',
+  'number',
+  'version',
+] as const satisfies readonly (keyof OutputResourceEntry)[];
+
+/**
+ * Derives the deterministic short `region` segment for a flat-output key from
+ * a {@link CloudInfraMeta}, mirroring the `<region>` naming used elsewhere:
+ *
+ *   - single region (e.g. `us-central1`) → `getRegionCode` → `us-c1`;
+ *   - multi-region code (e.g. `us`, `eu`, `asia`) → the token verbatim;
+ *   - dual-region (array, e.g. `[australia-southeast1, australia-southeast2]`)
+ *     → `meta.getLocation()` resolves it to its canonical multi/dual-region
+ *     token (e.g. `au`, `nam4`) which is used verbatim.
+ *
+ * The choice for multi/dual regions (use the canonical GCP location token
+ * rather than concatenating per-region codes) is documented in
+ * `core/output/README.md`; it is deterministic and collision-stable.
+ */
+const MULTI_REGION_TOKENS: ReadonlySet<string> = new Set<string>([
+  ...GcpMultiRegions,
+  ...GcpPredefinedDualRegions,
+  ...GcpDualRegionLocations,
+]);
+
+function deriveRegionSegment(meta: CloudInfraMeta): string {
+  // `getLocation()` collapses a dual-region array to its canonical token, so it
+  // returns a single string: a single region, a multi-region code, or a
+  // dual-region code.
+  const location = meta.getLocation();
+  // Multi-region / dual-region canonical token (e.g. "us", "eu", "au", "nam4")
+  // is used verbatim; only a true single region is shortened via getRegionCode.
+  if (MULTI_REGION_TOKENS.has(location)) {
+    return location;
+  }
+  return getRegionCode(location);
 }
 
 /**
@@ -189,13 +216,15 @@ export class CloudInfraOutput {
   > = {};
 
   /**
-   * The parallel FLAT emission (Move 4). Every {@link record} call appends one
-   * self-describing {@link FlatOutputRecord} here in addition to writing the
-   * nested {@link data} map. This is additive and never replaces the nested
-   * format. Insertion order mirrors the order of `record()` calls.
+   * The parallel FLAT emission: a single-level KEYED MAP from a composed key
+   * (`<domain>.<service>[.<region>].<name>.<field>`) to one scalar
+   * `pulumi.Output<string>`. Built incrementally on every {@link record} call
+   * in addition to the nested {@link data} map. Additive — never replaces the
+   * nested format. Each composed key is UNIQUE: a duplicate key throws at
+   * {@link record} time (see {@link record}).
    * @private
    */
-  private readonly flat: FlatOutputRecord[] = [];
+  private readonly flat: Record<string, pulumi.Output<string>> = {};
 
   /**
    * Creates a new instance of the `CloudInfraOutput`.
@@ -233,17 +262,57 @@ export class CloudInfraOutput {
     const entry = this.buildResourceEntry(resource);
     this.data[domain][resourceType][groupingKey] = entry;
 
-    // DUAL-EMIT (Move 4): append a flat, self-describing copy of the same
-    // entry. Reuse the IDENTICAL `entry` field values (same allow-list) so the
-    // flat record never diverges from the nested one; only the addressing
-    // (key/type/domain, which the nested map encodes as the object path) is
-    // added inline.
-    this.flat.push({
-      key: groupingKey,
-      type: resourceType,
-      domain,
-      ...entry,
-    });
+    // DUAL-EMIT: project the same entry into the flat KEYED MAP — one key per
+    // SCALAR field, keyed `<domain>.<service>[.<region>].<name>.<field>`. The
+    // region segment is present iff the entry carries a `location` field.
+    this.emitFlat(domain, resourceType, groupingKey, meta, entry);
+  }
+
+  /**
+   * Projects one recorded entry into the flat KEYED MAP: one key per scalar
+   * field present on the entry. Throws on a composed-key collision.
+   * @private
+   */
+  private emitFlat(
+    domain: string,
+    resourceType: string,
+    groupingKey: string,
+    meta: CloudInfraMeta,
+    entry: OutputResourceEntry
+  ): void {
+    const service = getServiceAlias(resourceType);
+
+    // The region segment is present iff the entry carries a `location` field
+    // (regional resources). Global resources (SA, folder, project, WIP, …) do
+    // not set `location`, so the segment is omitted.
+    const entryFields = entry as unknown as Record<string, unknown>;
+    const hasLocation = entryFields.location !== undefined;
+    const regionSegment = hasLocation ? deriveRegionSegment(meta) : undefined;
+
+    const sep = FLAT_KEY_SEPARATOR;
+    const prefix =
+      regionSegment !== undefined
+        ? `${domain}${sep}${service}${sep}${regionSegment}${sep}${groupingKey}`
+        : `${domain}${sep}${service}${sep}${groupingKey}`;
+
+    for (const field of FLAT_SCALAR_FIELDS) {
+      const value = entryFields[field];
+      if (value === undefined) {
+        continue;
+      }
+      const key = `${prefix}${sep}${field}`;
+      if (Object.prototype.hasOwnProperty.call(this.flat, key)) {
+        throw new Error(
+          `Flat-output key collision: '${key}' is produced by more than one ` +
+            `recorded resource. Two records compose the same ` +
+            `'<domain>.<service>[.<region>].<name>.<field>' key. Disambiguate ` +
+            `by giving them distinct grouping keys (or domains/regions).`
+        );
+      }
+      // Coerce Output<number> (e.g. project number) to Output<string> while
+      // keeping it lazy — never `.apply` to a plain string at record time.
+      this.flat[key] = (value as pulumi.Output<unknown>).apply(v => String(v));
+    }
   }
 
   /**
@@ -262,22 +331,27 @@ export class CloudInfraOutput {
   }
 
   /**
-   * Retrieves all recorded outputs as a FLAT, self-describing array (Move 4).
+   * Retrieves all recorded outputs as a FLAT, single-level KEYED MAP — one key
+   * per scalar field, keyed `<domain>.<service>[.<region>].<name>.<field>`
+   * (separator `.`), mapping to one `pulumi.Output<string>`.
    *
-   * This is the NEW emission, produced alongside (not instead of)
-   * {@link getOutputs}. Each element is a {@link FlatOutputRecord} carrying its
-   * own `key` / `type` / `domain` addressing inline plus the same resource
-   * fields the nested entry has. A producer stack can export it alongside the
-   * existing nested export:
+   * This is the recommended wire, produced alongside (not instead of)
+   * {@link getOutputs}. Because every key is a top-level scalar, a producer can
+   * spread the map onto its module exports so each composed key becomes a
+   * TOP-LEVEL stack output readable by a plain
+   * `pulumi.StackReference.requireOutput("<key>")` in ONE hop:
    *
    * ```ts
-   * export const v1 = mgr.getOutputs();        // legacy nested wire
-   * export const cloudInfra = mgr.getFlatOutputs(); // new flat wire
+   * // Each composed key becomes its own top-level stack output:
+   * Object.assign(exports, mgr.getFlatOutputs());
+   * // …or expose the whole map under a single nested output:
+   * export const cloudInfra = mgr.getFlatOutputs();
+   * export const org = mgr.getOutputs(); // legacy nested wire (unchanged)
    * ```
    *
-   * @returns The flat list of records, in `record()` insertion order.
+   * @returns A `Record<string, pulumi.Output<string>>` keyed by composed key.
    */
-  public getFlatOutputs(): FlatOutputRecord[] {
+  public getFlatOutputs(): Record<string, pulumi.Output<string>> {
     return this.flat;
   }
 
