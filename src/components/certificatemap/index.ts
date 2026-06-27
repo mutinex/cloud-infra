@@ -11,9 +11,39 @@ import { CloudInfraOutput } from '../../core/output';
 import { ResourceError, ValidationError } from '../../core/errors';
 import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 import { Config } from '../../config';
 import { CloudInfraCertificateMapConfig, CertificateDefinition } from './types';
+
+/**
+ * Name-first construction args for `CloudInfraCertificateMap` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the certificate config
+ * ({@link CloudInfraCertificateMapConfig}) into a single args object, so a
+ * certificate map can be built as
+ * `new CloudInfraCertificateMap("certs", { domain: "gl", certificates: [...], cloudflareZoneId: "..." })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the certificate config — every child name derived from
+ * the full config (the `-${cert.name}` certificate suffix, the
+ * `-${sanitize(domain)}` DNS-authorization / Cloudflare-record / map-entry
+ * suffixes), the sanitizer, the `deleteBeforeReplace`/`dependsOn` wiring and the
+ * regional-vs-global `location` handling are all derived exactly as the
+ * meta-first path — only meta acquisition is rerouted.
+ *
+ * {@link CloudInfraCertificateMapConfig} has no `location` field (location is
+ * derived from the meta domain via `determineLocation()`), so
+ * {@link NamingArgs.location} (which drives only the generated name) cannot
+ * collide with the config arm.
+ */
+export type CloudInfraCertificateMapArgs = NamingArgs &
+  CloudInfraCertificateMapConfig;
 
 // Type definitions for better type safety
 type DnsAuthorizationMap = Record<
@@ -76,11 +106,53 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
   private certificateMap?: gcp.certificatemanager.CertificateMap;
   private readonly certificateMapEntries: CertificateMapEntryMap = {};
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the certificate config
+   * are folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * Every child name derived from the full config (the `-${cert.name}`
+   * certificate suffix and the sanitized `-${domain}`/`-${hostname}` suffixes),
+   * the sanitizer, and the `deleteBeforeReplace`/`dependsOn` wiring are derived
+   * exactly as the meta-first path — only meta acquisition is rerouted.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraCertificateMapArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraCertificateMap(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraCertificateMapConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraCertificateMapArgs | CloudInfraCertificateMapConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // certificate config passed straight through (consumed UNCHANGED below —
+    // every child name/suffix, the sanitizer and deleteBeforeReplace/dependsOn
+    // are derived from it).
+    let meta: CloudInfraMeta;
+    let config: CloudInfraCertificateMapConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraCertificateMapArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraCertificateMapConfig;
+    }
+
     // Validate + resolve the generated NAME (unchanged, F1) before super. The
     // child suffix conventions (`-domain`/`-cert.name`/`-hostname`, sanitized)
     // are preserved verbatim further down (F2).
