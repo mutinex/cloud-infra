@@ -6,7 +6,11 @@ import { CloudInfraOutput } from '../../core/output';
 import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /**
  * Configuration for Compute Instance component.
@@ -19,6 +23,31 @@ export type CloudInfraComputeInstanceConfig = Omit<
   zone?: pulumi.Input<string>;
   project?: pulumi.Input<string>;
 };
+
+/**
+ * Name-first construction args for `CloudInfraComputeInstance` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the instance config
+ * ({@link CloudInfraComputeInstanceConfig}) into a single args object, so an
+ * instance can be built as
+ * `new CloudInfraComputeInstance("web", { domain: "au", machineType, bootDisk, networkInterfaces })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the instance config — the Instance child derives its
+ * name/parent/alias/labels/opts from the resolved meta + config exactly as the
+ * meta-first path.
+ *
+ * No `Omit` is needed here: this component is ZONAL — its instance-level
+ * placement field is `zone` (on {@link CloudInfraComputeInstanceConfig}), NOT
+ * `location`. {@link NamingArgs.location} is the naming surface (it feeds the
+ * resolved meta, which the EXISTING zonal-name logic — `config.zone` →
+ * `meta.getZone()` → `${deriveRegion(meta)}-a` default — consumes UNCHANGED), so
+ * there is no field collision between the two arms.
+ */
+export type CloudInfraComputeInstanceArgs = NamingArgs &
+  CloudInfraComputeInstanceConfig;
 
 /** Pulumi type token for the Compute Instance component. */
 export const COMPUTE_INSTANCE_TYPE = 'cloud-infra:instance:ComputeInstance';
@@ -51,11 +80,55 @@ export class CloudInfraComputeInstance extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   public readonly instance: gcp.compute.Instance;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the instance config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * The EXISTING zonal-name logic (`config.zone` → `meta.getZone()` →
+   * `${deriveRegion(meta)}-a` default) then runs UNCHANGED on the resolved meta,
+   * so the Instance child's zonal name/parent/alias/labels/opts are derived
+   * exactly as the meta-first path.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraComputeInstanceArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraComputeInstance(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraComputeInstanceConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig:
+      | CloudInfraComputeInstanceArgs
+      | CloudInfraComputeInstanceConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // instance config passed straight through. ONLY meta-acquisition is
+    // rerouted here — the zonal-name derivation below is byte-unchanged and
+    // runs on the resolved meta exactly as before.
+    let meta: CloudInfraMeta;
+    let config: CloudInfraComputeInstanceConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraComputeInstanceArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest as CloudInfraComputeInstanceConfig;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraComputeInstanceConfig;
+    }
+
     // Determine the zone to use - prefer explicit config.zone, then meta zone,
     // then default. This zonal-name logic (with the implicit `-a` zone default)
     // is preserved EXACTLY from v1 — it drives the generated NAME (F1), which
