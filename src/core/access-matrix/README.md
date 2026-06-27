@@ -350,38 +350,10 @@ The Access Matrix now supports configurable defaults via `accessMatrixConfig` in
 
 ### Performance Features
 
-- **Caching**: Principal resolution caching improves performance for repeated operations
 - **Performance Warnings**: Automatic warnings for large numbers of rules or principals
 - **Processing Metrics**: Timing information for initialization and processing phases
 
-### Utility Functions
-
-#### Validation
-
-```typescript
-import { validateAccessMatrixCases } from '@mutinex/cloud-infra';
-
-const result = validateAccessMatrixCases(cases);
-if (!result.isValid) {
-  console.error('Validation errors:', result.errors);
-}
-```
-
-#### Cache Management
-
-```typescript
-import { clearAccessMatrixCaches } from '@mutinex/cloud-infra';
-
-// Clear caches for memory management
-clearAccessMatrixCaches();
-```
-
-#### System Information
-
-```typescript
-import { getAccessMatrixInfo } from '@mutinex/cloud-infra';
-
-const info = getAccessMatrixInfo();
-console.log('Supported resource types:', info.supportedResourceTypes);
-console.log('Configuration:', info.configuration);
-```
+> Note: principal-resolution caching was intentionally disabled (Pulumi Outputs
+> stringify identically but differ in value) and the dead cache plus the
+> `validateAccessMatrixCases`, `clearAccessMatrixCaches`, and `getAccessMatrixInfo`
+> utility exports were removed in the Phase 3 dead-code excision.
