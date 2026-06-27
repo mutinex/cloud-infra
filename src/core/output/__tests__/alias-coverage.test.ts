@@ -8,13 +8,16 @@
  * EXPLICIT entry in `serviceAliasMap`, so a new resource type can never silently
  * fall back.
  *
- * EMITTED_TYPE_TOKENS below is the hand-maintained enumeration of every first
- * argument passed to `CloudInfraOutput.record(...)` across `src/components` and
- * `src/organization` (some are built dynamically — see notes). If a new
- * component emits a new type, ADD it both here AND to `serviceAliasMap`; this
- * test fails until the explicit alias exists.
+ * This guard is FAIL-CLOSED: the emitted type-token set is DERIVED from source
+ * at test time (not a hand-maintained list) by scanning every emitter file
+ * under `src/components` and `src/organization` for the `'gcp:…:…'` type-string
+ * literals they pass to `record()`/`exportOutputs()`. A newly-emitted type added
+ * to neither `serviceAliasMap` nor the source automatically appears here and
+ * fails the suite — there is no list to forget to update.
  */
 import { describe, it, expect } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   serviceAliasMap,
   resourceTypeMap,
@@ -22,57 +25,73 @@ import {
   deriveServiceAliasFallback,
 } from '../../reference/config';
 
-/**
- * Every distinct Pulumi type token emitted by a `record()` call in the repo.
- * Keep alphabetised for easy diffing. Dynamic emitters are annotated.
- */
-const EMITTED_TYPE_TOKENS: readonly string[] = [
-  'gcp:artifactregistry:Repository',
-  'gcp:certificatemanager:CertificateMap',
-  'gcp:cloudrunv2:Job',
-  'gcp:cloudrunv2:Service',
-  'gcp:compute:Address',
-  'gcp:compute:BackendService',
-  'gcp:compute:GlobalAddress',
-  'gcp:compute:HealthCheck',
-  'gcp:compute:Instance',
-  'gcp:compute:Network',
-  'gcp:compute:RegionBackendService',
-  'gcp:compute:Route',
-  'gcp:compute:Router',
-  'gcp:compute:RouterNat',
-  'gcp:compute:Subnetwork',
-  'gcp:iam:WorkloadIdentityPool',
-  'gcp:iam:WorkloadIdentityPoolProvider',
-  // role/index.ts emits one of these two depending on whether an orgId is set.
-  'gcp:organizations:IAMCustomRole',
-  'gcp:projects:IAMCustomRole',
-  'gcp:organizations:Folder',
-  'gcp:organizations:Project',
-  'gcp:privilegedaccessmanager:Entitlement',
-  'gcp:secretmanager:RegionalSecret',
-  'gcp:secretmanager:RegionalSecretVersion',
-  'gcp:secretmanager:Secret',
-  'gcp:secretmanager:SecretVersion',
-  'gcp:serviceaccount:Account',
-  'gcp:servicenetworking:Connection',
-  'gcp:sql:Database',
-  'gcp:sql:DatabaseInstance',
-  'gcp:sql:User',
-  'gcp:storage:Bucket',
-  'gcp:tags:TagKey',
-  'gcp:tags:TagValue',
-  'gcp:vpcaccess:Connector',
+// Repo root, derived from this test file's location
+// (src/core/output/__tests__/ -> up 4).
+const REPO_ROOT = path.resolve(__dirname, '../../../..');
+const EMITTER_DIRS = [
+  path.join(REPO_ROOT, 'src', 'components'),
+  path.join(REPO_ROOT, 'src', 'organization'),
 ];
 
+/** Recursively list every non-test `.ts` file under a directory. */
+function listSourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__') continue;
+      out.push(...listSourceFiles(full));
+    } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/**
+ * Derives the set of emitted Pulumi type tokens from source. A file is an
+ * EMITTER if it calls `record(` or defines/uses `exportOutputs`; from each
+ * emitter file we collect every `'gcp:<segment>:<segment>'` type-string literal.
+ * Type tokens in these emitter files are exclusively the first argument of a
+ * `record()` call (sometimes via a local `const resourceType = … ? 'gcp:…' :
+ * 'gcp:…'` ternary), so scanning the literals is precise AND fail-closed: a new
+ * emitted type introduces a new literal that must be mapped.
+ */
+function deriveEmittedTypeTokens(): string[] {
+  const tokens = new Set<string>();
+  const literalRe = /'(gcp:[A-Za-z0-9]+:[A-Za-z0-9]+)'/g;
+  for (const dir of EMITTER_DIRS) {
+    for (const file of listSourceFiles(dir)) {
+      const src = fs.readFileSync(file, 'utf8');
+      if (!src.includes('.record(') && !src.includes('exportOutputs')) {
+        continue;
+      }
+      for (const m of src.matchAll(literalRe)) {
+        tokens.add(m[1]);
+      }
+    }
+  }
+  return Array.from(tokens).sort();
+}
+
+const EMITTED_TYPE_TOKENS: readonly string[] = deriveEmittedTypeTokens();
+
 describe('flat-output service alias coverage', () => {
+  it('derived the emitted type-token set from source (non-empty)', () => {
+    // Sanity: the scan must actually find emitters. A zero count would make the
+    // coverage assertion vacuously pass (NOT fail-closed) — guard against a
+    // moved directory / broken glob silently disabling the check.
+    expect(EMITTED_TYPE_TOKENS.length).toBeGreaterThan(20);
+  });
+
   it('every emitted type token has an EXPLICIT serviceAliasMap entry', () => {
     const missing = EMITTED_TYPE_TOKENS.filter(
       t => serviceAliasMap[t] === undefined
     );
     expect(
       missing,
-      `These emitted type tokens lack an explicit alias in serviceAliasMap ` +
+      `These emitted type tokens (DERIVED from src/components + ` +
+        `src/organization) lack an explicit alias in serviceAliasMap ` +
         `(they would silently use deriveServiceAliasFallback): ${missing.join(', ')}`
     ).toEqual([]);
   });
