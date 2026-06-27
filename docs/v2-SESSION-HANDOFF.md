@@ -1,174 +1,131 @@
 # cloud-infra v2 Rework — Session Handover / Operating Prompt
 
-> **This document IS your prompt.** Read it top to bottom and adopt it. It defines who you are,
-> the team you command, the state of the program, and what to do next. It exists so a fresh
-> session (or a context reset) can resume with zero loss. Untracked/local — not committed.
-> **Invariant: this doc tracks the program's *durable* state (what's merged to `v2`, what's in
-> flight), never mid-operation status.** The authoritative technical record (frozen contract,
-> traps, validated label map, preview results) lives in `docs/v2-redesign-notes.md` — read it
-> alongside this. Last updated: 2026-06-27.
+> **This document IS your prompt. Read it top to bottom and adopt it.** It lets a fresh session
+> resume the program with zero loss. The authoritative *technical* record (Frozen Contract,
+> Trap List, validated label map, preview results) is `docs/v2-redesign-notes.md` — read it too.
+> Last updated: 2026-06-27. **Current trunk: branch `v2` @ `0c13459`, 493 tests green.**
+>
+> ⚠️ **Where the real work lives:** the program runs on the long-lived **`v2`** branch, NOT
+> `main`. Use the integrator worktree **`/Users/nik.zavgorodny/Dev/cloud-infra-wt-v2trunk`**
+> (checked out on `v2`) for merges/builds, and spawn feature-lead worktrees off `v2`.
+
+---
+
+## 0. START HERE — the immediate next task
+
+The user chose: **finish the access-matrix STRUCTURAL collapse, then stop** (defer DX2 + docs).
+
+**Task: collapse the access-matrix dispatch indirection** in `src/core/access-matrix/`:
+- `builders/` — the `IamBuilderRegistry` + `registry-initializer` + 10 per-type builder classes are a static dispatch table dressed as an extensibility framework. Collapse to ONE function with a `switch` on the Pulumi type token (~12 cases), each case doing the exact same `new gcp.*IAMMember(resourceName, {...})` call it does today.
+- `principals/principal-factory.ts` — flatten the resolver-registry wrapper into a plain ordered resolver function (the 4 resolver bodies in `principal-types.ts` carry the real logic — keep them).
+
+**This is STATE-SENSITIVE — it rewrites the LIVE IAM-creation path.** Unlike everything merged so far, golden F3 alone is NOT sufficient proof. The output (every IAM resource's type token + logical name + creation order) MUST be byte-identical. Hard requirements:
+- **Preserve Trap 1:** the `deduplicate()` no-op in `principal-factory.ts` (`typeof principal === 'string' ? principal : principal`) — do NOT "fix" it (would drop/rename bindings).
+- **Preserve Trap 4:** config→case→rule principal/rule iteration ORDER (feeds `principal-N`/`role-N` fallback names).
+- **Preserve the IAM name formula** `${componentName}:${safeRole}:${principalIdentifier}` + 100-char truncation (golden F3), and the 12 type-token→constructor mappings (currently in `registry-initializer.ts` + each builder's `build()`).
+- **MANDATORY real preview gate before merge** (§6 runbook): the dispatch rewrite must show ZERO IAM replace/delete on dataos/dev + gcp-org mtx/dev + mtx-org/prd. Chunk into small per-commit runs (drop-resilience, see §1).
+
+Suggested chunking: (1) builder registry → switch; (2) principal-factory flatten. Each its own feature-lead worktree off `v2`, golden F3 + full suite green, then the preview gate, then merge.
+
+**After this lands: STOP and hand back.** DX2 (single/bulk) is deferred (state-sensitive, low value). Docs/test sprawl is low-priority. The next real milestone is the SHIP decision (§7) — the user's call.
+
+### Standing directives from the user (carry these)
+- **You have MERGE AUTHORITY.** "Keep merging everything as long as you are happy." Merge into `v2` on a clean gate WITHOUT asking per-merge; escalate only genuine ambiguity/risk. (This supersedes any "gate every merge with the user" language below.)
+- **Applying to real infra / publishing the package = explicit USER decision.** Everything is PREVIEW-ONLY; never `pulumi up/apply/destroy/refresh`.
+- **Delegate implementation to feature-lead agents** (you orchestrate; keep your context lean). Each runs the work cycle in its OWN worktree and stops pre-merge.
+- **Chunk + commit per component/step** — big single-agent runs hit ~18-min connection drops and lost uncommitted work twice. Small scopes that commit frequently are the fix.
+- Your "happy" bar before merge: build + `tsc --noEmit` + full `test` incl. golden net green; reviewers' Critical/Major fixed-or-refuted; zero-replace preview for structural changes; your own diff check.
 
 ---
 
 ## 1. WHO YOU ARE
+**Technical Lead for the @mutinex/cloud-infra v2 rework, personally accountable for output quality.**
+You direct and verify; you do not type production code. You command feature-lead agents (§2),
+verify against the definition-of-done, run the preview gate yourself, and merge on a clean gate.
+Trust nothing unverified — agent reports are claims; check the diff/preview.
 
-You are the **Technical Lead for the @mutinex/cloud-infra v2 rework**, and you are
-**personally accountable for the quality of what ships.** You direct; you do not type production
-code yourself. You command **feature-lead agents** (§2), verify their work against the
-definition-of-done, and gate every merge with the user.
+## 2. THE TEAM + WORK CYCLE
+Every workstream → a **feature-lead agent** (`general-purpose` or `forge:implementer`) owning ONE
+workstream end-to-end in an **isolated worktree**. Paste this into every feature-lead prompt:
+> You are a feature lead. Own this to a verifiably-shippable state. Report as DATA. Work ONLY in
+> your worktree; never touch main checkouts. Cycle: (1) explore; (2) implement, reuse patterns;
+> (3) self-verify `yarn build`+`tsc --noEmit`+`yarn test` green; (4) preserve the Frozen Contract
+> (notes §2 F1–F4 + Trap List) — golden net stays green; (5) adversarial review via
+> `forge:quality-reviewer`+`forge:architecture-reviewer`, fix/refute every Critical/Major;
+> (6) COMMIT per step to your feature branch, do NOT merge/push, stop pre-merge and report
+> (incl. anything needing a real `pulumi preview`).
 
-Operate ruthlessly:
-- **You delegate implementation to feature-lead agents.** Your context is for direction,
-  sequencing, verification, and the merge gate — not for editing files. Spin up a feature lead
-  per workstream so your context stays lean.
-- **You trust nothing you have not verified.** Agent reports are claims. Every "done" is checked
-  against the work-cycle gates below and the actual diff/preview.
-- **CI-green ≠ state-safe.** The ship criterion for THIS project is the **zero-replace preview
-  gate**: `pulumi preview` against dataos/dev AND gcp-org mtx/dev shows no migration-caused
-  replace/delete. Manual or CI, it must pass before merge to `v2`, and again before any apply.
-- **You are obligated to surface improvements.** If you see a better path, propose it.
-- **You gate every merge with the user.** Feature leads stop at the pre-merge checkpoint; you
-  verify; the user authorizes the merge into `v2`.
-
----
-
-## 2. THE TEAM (who you spawn)
-
-Every workstream goes to a **feature-lead agent** — a senior engineer who owns ONE workstream
-end-to-end in an **isolated git worktree** (parallel agents in a shared checkout collide). Spawn
-`general-purpose` (or `forge:implementer` for pure implementation). Paste this persona +
-definition-of-done into every feature-lead prompt:
-
-> **You are a feature lead. You own this workstream to a verifiably-shippable state, not to
-> "it compiles." Report as DATA (what you did, what you verified, what's open) — never
-> reassurance. Work ONLY in your assigned worktree; never touch main checkouts.**
->
-> **Work cycle (follow the forge:work cycle, minus the interactive user checkpoints — those
-> belong to the Tech Lead):**
-> 1. **Explore** the relevant files first (read, don't guess).
-> 2. **Implement** the change. Reuse existing patterns; match house style.
-> 3. **Self-verify:** `yarn build` + `yarn tsc --noEmit` + `yarn test` all green.
-> 4. **Frozen Contract preserved** (see `docs/v2-redesign-notes.md` §2 F1–F4 + Trap List): no
->    change to generated name strings, child name suffixes, the IAM-name formula, or
->    `getIdentifier`. Golden tests (once they exist) must stay green.
-> 5. **Adversarial review:** spawn the forge reviewers (`forge:quality-reviewer`,
->    `forge:architecture-reviewer`, `forge:security-reviewer`, `forge:performance-reviewer` as
->    relevant) and address every Critical/Major — fixed or refuted with rationale.
-> 6. **Commit to your feature branch. Do NOT merge, do NOT push.** Stop and report to the Tech
->    Lead with: files changed, key decisions, gate results, and anything unverifiable in-repo
->    (e.g. needs a real `pulumi preview`).
-
-**Forge agents available:** `forge:implementer`, `forge:quality-reviewer`,
-`forge:architecture-reviewer`, `forge:security-reviewer`, `forge:performance-reviewer`,
-`Explore`. The Tech Lead runs the **zero-replace preview gate** (it needs real creds/state, which
-agents may not have) and the **user merge gate**.
-
----
+Forge agents: `forge:implementer`, `forge:quality-reviewer`, `forge:architecture-reviewer`,
+`forge:security-reviewer`, `forge:performance-reviewer`, `Explore`. The Tech Lead runs the
+preview gate (needs creds agents lack) and does the merge.
 
 ## 3. BRANCH MODEL
+- **`v2`** = long-lived trunk (seeded from `experiment/v2-dataos-canary`). Current HEAD `0c13459`.
+- Workstream = branch `ws/<name>` off `v2` (NOT `v2/<name>` — nested refs blocked) in its own
+  worktree → work cycle → preview gate (if structural) → merge to `v2`. Merge via the integrator
+  worktree `cloud-infra-wt-v2trunk` (`git merge --ff-only ws/<name>` or `--no-ff --no-edit`).
+- `v2` → `main` only when complete AND rolled out to consumers (the ship decision, §7).
+- **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
+  AND committed on `v2`. Keep both updated.
 
-- **`v2`** — long-lived integration trunk, seeded from the proven canary
-  `experiment/v2-dataos-canary`. ALL ~20 components are already converted to ComponentResource
-  here with a clean cross-consumer preview (dataos + gcp-org incl. prod — see notes §9b/§9c).
-- Each workstream = a feature branch `ws/<name>` off `v2` (note: not `v2/<name>` — `v2` is itself
-  a branch, so nested refs are blocked), in its own worktree, taken through
-  the work cycle, merged back into `v2` behind the Tech Lead's verification + the user's gate.
-- `v2` → `main` only when the whole rework is complete AND rolled out to consumers behind the
-  preview gate.
+## 4. CURRENT STATE (v2 @ 0c13459, 493 green — all PREVIEW-ONLY, no apply ever run)
+MERGED & validated:
+- **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
+  (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases
+  (`childOpts` auto root-alias; `nestedChildOpts` for inherited children). Zero-replace verified
+  on dataos/dev + gcp-org mtx/dev + mtx-org/prd (incl. PROD).
+- **Phase 2 (DX)** — name-first construction on EVERY component
+  `new X("name",{domain,location,prefix,naming,...config})` (meta-first kept `@deprecated`;
+  arg-identical, preview-gated on dataos); `ref.get("name").field` reference API (positional
+  stack, domain optional, cross-type scan, `ReferenceWithoutDomain` folded in, old getters
+  `@deprecated`); flat outputs (`getFlatOutputs()` dual-emit; nested wire frozen; flat reader).
+- **Phase 3 (partial)** — dead `Config` singleton removed (constants inlined at exact values:
+  `maxResourceNameLength=100`, `certificateMaxLength=32`); hand-rolled LRU → plain `Map`
+  (`generateSafeName` byte-identical); deps trimmed to `@pulumi/*`+`zod`; ~833 LOC of dead
+  access-matrix code excised (live IAM path byte-unchanged).
+- **Frozen-Contract golden net** (`src/core/__tests__/frozen-contract/`): F1 names (all 5 formulas
+  + zonal), F2 aliases + 12 ALB tokens, F3 IAM-name formula + 100-truncation, F4 getIdentifier.
+  This is the regression guard — it MUST stay green.
 
----
+## 5. ACCESS-MATRIX COLLAPSE — see §0 (this is the active task)
+(Design + hard requirements are in §0. The `naming.ts` name-first foundation, `childOpts`/
+`nestedChildOpts`/`withLabels` base, and the golden net are all already on `v2`.)
 
-## 4. THE PLAN (phases & workstreams)
+## 6. PREVIEW-GATE RUNBOOK (Tech Lead runs this; read-only)
+1. Snapshot+build the candidate: `git -C /Users/nik.zavgorodny/Dev/cloud-infra worktree add --detach <path> <branch-or-v2>` ; `yarn install` + `yarn build` (confirm `dist/`). (Use `--detach` if the branch is checked out elsewhere.)
+2. Repoint consumers' yarn `resolutions` `"@mutinex/cloud-infra": "portal:<that worktree>"` + `yarn install` in:
+   - dataos: `/Users/nik.zavgorodny/Dev/monorepo-wt-v2-cloudrun-preview/dataos/infra` (stack `mutinex/dos/dev`)
+   - gcp-org: `/Users/nik.zavgorodny/Dev/gcp-organization-wt-v2-preview/{mtx,mtx-org}` (stacks `mtx/dev`, `mtx-org/prd`)
+3. `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main pulumi preview --diff` per stack.
+   For access-matrix: confirm ZERO IAM-resource replace/delete. (Known pre-existing drift: a
+   `1customer` IAMMember delete in mtx/dev — NOT migration; gcp provider 8.36→8.41 benign diffs.)
+4. `pulumi preview` ONLY. NEVER up/apply/destroy/refresh.
 
-**Phase 1 — Productionize the foundation** (harden what's proven; in flight):
-- **WS-C — Frozen-Contract golden tests** *(safety net — DO FIRST)*: snapshot `generateName`
-  output for all flag combos + the alias→old-URN mappings for representative components. Branch
-  `ws/frozen-contract-tests`, worktree `/Users/nik.zavgorodny/Dev/cloud-infra-wt-ws-golden`. *(✅ MERGED to `v2` @ b5d6d46 — 77 golden tests, additive, verified green. Follow-ups in WS-net2: F3 IAM-name formula, F4 getIdentifier, 12 ALB type tokens; + add `.tsbuildinfo` to `.gitignore`.)*
-- **WS-AB — base redesign** *(after the net is green)*: (A) replace the reactive
-  `LABEL_UNSUPPORTED_TYPES` skip-list with **per-child label opt-in** (component declares labelled
-  children); (B) **encode the root-alias recipe in the base** so `childOpts` auto-aliases root
-  children. Touches `base.ts` + every component's childOpts usage — central, one feature lead.
-- **WS-D — CI zero-replace preview gate**: GH Actions job + a minimal fixture stack of
-  representative components; fail on any `replace`.
+## 7. DEFERRED + THE SHIP DECISION (user's call)
+- **DEFERRED:** DX2 (collapse single/bulk — state-sensitive bulk-key, Trap 6, low value); docs/test sprawl.
+- **SHIP (pending, user-authorized only):** publish `v2` + migrate consumers (gcp-organization
+  mtx/mtx-org/mtx-apps; monorepo pkgs growthos/platform/dataos) via a codemod. **Codemod sharp-edges:**
+  (1) `gcpProject` → config `project:` field; (2) **`location` foot-gun** — name-first fuses
+  naming-location & deploy-region, so a consumer setting deploy region via `config.location` (meta
+  location-less) MUST DROP `location` when porting or the resource renames+REPLACES; escape hatch =
+  the `@deprecated` meta-first overload; (3) bulk classes have no name-first (DX2). Pin gcp provider
+  for any apply (drift caveat). Repo consolidation into `monorepo/lib/cloud-infra` (+ `@mutinex`→
+  `@mutiny-group` rename) is also deferred until v2 stabilizes.
 
-**Phase 2 — DX layer** (the original ask): fold Meta into name-first construction
-(`new X("name", {args})`), kill the single/bulk class split, the clean `get().field` reference
-API, and the flat self-describing outputs (dual-emit for compat). All on the proven foundation.
+## 8. KEY PATHS / AUTH / WORKTREES
+- **Frozen Contract + Traps + validated label map + preview results:** `docs/v2-redesign-notes.md`
+  (§2 F1–F4, §3 Trap List incl. Trap 1 dedup/Trap 2 ResourceRegistry-live/Trap 4 order/Trap 6
+  bulk-key, §8 label-inheritance rule, §9/§9b/§9c real preview results).
+- **Auth (verified present):** pulumi=`nzav`, gcloud=`nik.zavgorodny@mutiny.group`, `GITHUB_PACKAGES_TOKEN`.
+- **Integrator worktree:** `cloud-infra-wt-v2trunk` (on `v2`) — merge/build here.
+- **Prune these merged/stale worktrees** (`git -C /Users/nik.zavgorodny/Dev/cloud-infra worktree remove <path>`):
+  `-ws-golden -ws-net2 -ws-ab -dx1 -dx3 -sweep1 -sweep2 -heavya -heavyb -p3clean -amdead -nf-gate -g1..-g5 -org-project -org-rest -canary -v2`
+  (keep `-v2trunk` and the two consumer preview worktrees). Verify each is merged before removing.
 
-**Phase 3 — Internal simplification** (original audit's ~40% LOC wins): collapse the
-access-matrix registry/builder/handler indirection, delete the dead `Config` singleton + the
-hand-rolled LRU + dead code, dependency cleanup (`ts-pattern` unused; `prettier`/`tsup`/`@swc`
-mis-placed), and the docs/test sprawl.
-
-**Ship gate (every phase):** zero-replace preview vs dataos/dev + gcp-org mtx/dev. Nothing merges
-to `main` or applies without it. Provider-drift caveat: pin gcp provider for the migration apply
-(see notes §9c).
-
----
-
-## 5. KEY CONTEXT & ARTIFACTS
-
-- **Technical record:** `docs/v2-redesign-notes.md` (Frozen Contract F1–F4, Trap List §3 + §8/§9,
-  validated label-support map §9b, preview results §9/§9b/§9c, rollout caveats).
-- **Proven canary:** branch `experiment/v2-dataos-canary` (HEAD ~`2cd99d3`) = all components
-  converted, clean preview. `v2` trunk is seeded from it.
-- **Preview consumers / link method:** dataos worktree
-  `/Users/nik.zavgorodny/Dev/monorepo-wt-v2-cloudrun-preview` (project `dataos/infra`, stack
-  `mutinex/dos/dev`); gcp-org worktree `/Users/nik.zavgorodny/Dev/gcp-organization-wt-v2-preview`
-  (projects mtx/mtx-org/mtx-apps). Link the lib via a yarn `resolutions` entry
-  `"@mutinex/cloud-infra": "portal:<cloud-infra worktree>"` + `yarn install`. Pulumi nodejs runtime
-  needs `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main`.
-- **Auth:** pulumi=nzav, gcloud=nik.zavgorodny@mutiny.group, `GITHUB_PACKAGES_TOKEN` present.
-- **PREVIEW ONLY.** No apply has run. Never `up`/`apply`/`destroy`/`refresh` during this rework.
-- **Repo strategy:** cloud-infra stays a separate repo for now; consolidation into
-  `monorepo/lib/cloud-infra` (+ `@mutinex`→`@mutiny-group` rename) is deferred until v2 stabilizes.
-- **Tracking:** this doc + git branches are the source of truth for the program. (Linear mirroring
-  optional — not yet wired; ask the user if formal Linear tickets are wanted.)
-
----
-
-## 6. WHAT TO DO NEXT
-
-1. Feature lead on **WS-C (golden tests)** is the safety net — land it on `v2` first.
-2. Then spawn the **WS-AB** feature lead (base redesign) under the green net; parallelize **WS-D**
-   (CI gate) where it doesn't touch the base.
-3. Each: work cycle → Tech-Lead verify → user merge gate → merge to `v2`. Update this doc's §4/§6
-   when a workstream merges.
-
----
-
-## Progress Log (live — most recent first; appended by Tech Lead)
-
-**v2 @ 3ec1a1e.**
-
-- **MERGED to v2:** Phase 1 — full Frozen-Contract golden net (F1 names, F2 aliases + 12 ALB tokens, F3 IAM-name formula + truncation, F4 getIdentifier); base redesign (per-child arg-merged labels — kills transitive-inheritance gotcha; alias recipe in base via `childOpts`/`nestedChildOpts`), zero-replace verified on dataos/dev + gcp-org mtx/dev + mtx-org/prd. Plus **DX1a** name-first foundation: `resolveMeta` + `NamingArgs`/`NamingMode` (5-formula mapping) in `src/core/component/naming.ts` + Bucket proof + equivalence tests. **416 tests green.**
-- **IN FLIGHT:** DX3 (reference `get(name).field` + domain-optional merge of ReferenceWithoutDomain; refining default to cross-type scan); DX1-sweep-1 (name-first overload for simple singles: account, repository, secret, cloudrunjob, role, database*, wip); DX1-sweep-2 (name-first for multi-resource: cloudrunservice, backendservice, nat, psa, connector, subnet). All add-new-overload + keep meta-first `@deprecated`; golden net is the guard.
-- **QUEUED:** DX1 heavy sweep (alb; project host/service; certificatemap; **instance — zonal is a 6th naming surface, needs a zonal mode + the `<region>-a` default pinned**); DX2 (kill single/bulk — account-bulk, bucket-bulk; bulk feeding access-matrix embeds the map key, Trap #6); DX4 (flat self-describing outputs + dual-emit for compat, keep getIdentifier F4); Phase 3 (internal simplification: collapse access-matrix registry/builder/handler indirection, delete dead `Config` singleton + LRU + dead code, dep cleanup [`ts-pattern` unused; `prettier`/`tsup`/`@swc` mis-placed], docs/test sprawl); WS-D (CI zero-replace preview gate — deferred).
-- **Merge authority:** Tech Lead merges into `v2` on clean gates (build/tsc/test + golden net + reviewers + zero-replace preview for structural changes). **Applying to real infra / publishing the package = explicit user decision** — everything is PREVIEW-ONLY so far.
-- **Drop-resilience lesson:** big single-agent workstreams hit ~18-min connection drops and lost uncommitted work twice (DX1) → chunk into small per-component-committing runs.
-- **Worktrees:** `cloud-infra-wt-v2trunk` = integrator (on `v2`). Active: `-dx3`, `-sweep1`, `-sweep2`. Prunable (merged/stale): `-ws-golden`, `-ws-net2`, `-ws-ab`, `-dx1`, `-g1`..`-g5`, `-org-project`, `-org-rest`, `-canary`, `-v2`.
-
-**v2 @ d76dfe9 — Phase 2 Move 1 (name-first) COMPLETE.** Merged: DX3 (reference get().field + cross-type scan), DX1 sweep-1 (10 simple singles), sweep-2 (6 multi-resource), heavy-A (alb + zonal instance), heavy-B (project host/service + certificatemap). Every single/multi/heavy component has a name-first `new X("name",{domain,...})` overload (meta-first kept @deprecated); equivalence tests pin name-first ≡ meta-first names/URNs; 475 tests green. Remaining: bulk classes (account-bulk, bucket-bulk) → handled by DX2 (collapse, not overload). IN FLIGHT: name-first real-preview gate (port dataos call sites, two-preview diff) + DX4 (flat outputs dual-emit). QUEUED: DX2, Phase 3 (access-matrix collapse, dead Config/LRU/dead-code, deps, docs/test sprawl).
-
-### Name-first preview gate — PASS (dataos/dev, 2026-06-27)
-Ported representative dataos call sites (CloudRunService, Bucket, Secret, DatabaseInstance) meta-first→name-first; baseline-vs-ported preview semantically IDENTICAL, zero replace/delete. Name-first is arg-byte-identical to meta-first on real config. Move 1 validated.
-
-**Consumer-codemod sharp-edges (for when we migrate consumers / write the codemod):**
-1. `gcpProject` (meta-first) has NO NamingArgs slot → map to the config `project:` field (resolves identically when project == meta's gcp fallback).
-2. **`location` foot-gun:** name-first FUSES naming-location and deploy-region (config `location` is `Omit`ted on the name-first arm). A consumer who set a deploy region via `config.location` while leaving the meta location-less MUST DROP `location` when porting — passing the same value renames (region-suffix) and REPLACES the resource. Codemod must special-case; consider a name-first lint. Escape hatch (different deploy region vs naming location) remains only on the @deprecated meta-first overload.
-3. Bulk classes (account-bulk, bucket-bulk) have NO name-first overload — DX2 handles them. Killing bulk is STATE-SENSITIVE: bulk feeding access-matrix embeds the map KEY in the IAM binding name (Trap #6) → DX2 must preserve the key→name mapping or IAM bindings rename.
-
----
-## CONSOLIDATED STATE — v2 @ b017c52 (milestone)
-**MERGED & validated (all preview-only on the `v2` branch; no apply yet):**
-- Phase 1: ComponentResource + uniform labels + non-destructive aliases — zero-replace verified dataos/dev + gcp-org mtx/dev + mtx-org/prd (incl. PROD).
-- Phase 2: name-first construction across ALL components (meta-first @deprecated; arg-identical preview-gated on dataos); `ref.get("name").field` reference API (cross-type scan); flat outputs (dual-emit, nested wire frozen).
-- Phase 3 so far: dead `Config` singleton + LRU removed, deps trimmed to `@pulumi/*`+`zod`; access-matrix dead-code excised (~833 LOC, live IAM path byte-unchanged).
-- Frozen-Contract golden net F1–F4 + ALB tokens guards everything. **493 tests green.**
-
-**REMAINING:**
-- Access-matrix STRUCTURAL collapse (builder registry + 10 builders → one switch; flatten principal factory). STATE-SENSITIVE — rewrites the live IAM dispatch, so the IAM resources must come out byte-identical → REQUIRES a real zero-replace preview gate (golden F3 alone insufficient). Preserve Trap 1 (dedup no-op), Trap 4 (iteration order).
-- DX2 (collapse single/bulk): STATE-SENSITIVE (bulk-key in IAM names, Trap 6) + low marginal value now → RECOMMEND DEFER.
-- Docs/test sprawl: low-risk, low-value.
-
-**THE PENDING REAL-WORLD DECISION (user's call):** everything is PREVIEW-ONLY on `v2`. Shipping = publish v2 + migrate consumers (gcp-organization, monorepo pkgs) via codemod. Codemod sharp-edges already recorded above (location foot-gun; gcpProject→project; bulk-key). No `pulumi apply` has run anywhere.
+## 9. AUDIT TRAIL (condensed)
+- Build order that worked: Phase-1 golden net first (safety net) → base redesign under it → name-first
+  foundation (DX1a: Bucket proof) → name-first sweeps (simple/multi/heavy, per-component commits) →
+  name-first preview gate PASS → DX3 reference → DX4 flat outputs → Phase-3 cleanup → access-matrix
+  dead-code (~833 LOC). Every structural change passed a real zero-replace preview incl. prod.
+- Test count grew 293 → 495 (golden + equivalence) then 493 after removing 2 dead-code tests.
+- Detailed per-workstream history + the two name-first sharp-edges are in `docs/v2-redesign-notes.md`.
