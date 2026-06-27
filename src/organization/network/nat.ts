@@ -16,6 +16,10 @@ import { assertSingleRegion } from '../../core/helpers';
 import { PulumiInputStringSchema } from '../../core/types';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the NAT component. */
+export const NAT_TYPE = 'cloud-infra:network:CloudInfraNat';
 
 export const CloudInfraNatConfigSchema = z
   .object({
@@ -54,7 +58,7 @@ export interface CloudInfraNatConfig
  * });
  * ```
  */
-export class CloudInfraNat {
+export class CloudInfraNat extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly config: CloudInfraNatConfig;
   private readonly inputName: string;
@@ -66,10 +70,31 @@ export class CloudInfraNat {
 
   /**
    * Constructs a new `CloudInfraNat` gateway.
+   *
+   * This component is now a {@link pulumi.ComponentResource} (via
+   * {@link CloudInfraComponent}): the Router, RouterNat and Route are created
+   * as *children* of the component. All three v1 resources sat at the stack
+   * root (no explicit parent), so each carries an `alias` back to its old
+   * root-level URN (`{ parent: pulumi.rootStackResource }`) for IN-PLACE
+   * migration — generated NAMEs unchanged (F1).
+   *
+   * NOTE on labels: none of `gcp.compute.Router`, `gcp.compute.RouterNat`, or
+   * `gcp.compute.Route` supports a `labels` field, so all children are parented
+   * WITHOUT label stamping (plain `{ parent: this, ... }`, not `childOpts`).
+   *
    * @param meta The `CloudInfraMeta` instance to derive naming and region from.
    * @param cloudInfraConfig The configuration for the NAT gateway.
+   * @param opts Optional Pulumi component resource options.
    */
-  constructor(meta: CloudInfraMeta, cloudInfraConfig: CloudInfraNatConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    cloudInfraConfig: CloudInfraNatConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const resourceName = meta.getName();
+
+    super(NAT_TYPE, resourceName, resourceName, { domain: meta.getDomain() }, opts);
+
     CloudInfraLogger.info('Initializing NAT gateway component', {
       component: 'network-nat',
       operation: 'constructor',
@@ -92,20 +117,34 @@ export class CloudInfraNat {
       cloudInfraConfig
     ) as CloudInfraNatConfig;
 
-    this.resourceName = meta.getName();
+    this.resourceName = resourceName;
 
     this.router = this.createRouter(this.config);
 
     this.routerNat = this.createRouterNat(this.config, this.router);
 
     this.defaultRoute = this.createDefaultRoute(this.config);
+
+    this.registerOutputs({
+      router: this.router,
+      routerNat: this.routerNat,
+      defaultRoute: this.defaultRoute,
+    });
   }
 
   private createRouter(config: CloudInfraNatConfig): gcp.compute.Router {
-    const router = new gcp.compute.Router(this.resourceName, {
-      region: this.region,
-      ...config.router,
-    });
+    // v1: root-level → alias back to root. Router has NO labels.
+    const router = new gcp.compute.Router(
+      this.resourceName,
+      {
+        region: this.region,
+        ...config.router,
+      },
+      {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
+    );
     return router;
   }
 
@@ -116,11 +155,19 @@ export class CloudInfraNat {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { router: _, ...routerNatConfig } = config;
 
-    const routerNat = new gcp.compute.RouterNat(this.resourceName, {
-      region: this.region,
-      router: router.name,
-      ...routerNatConfig,
-    });
+    // v1: root-level → alias back to root. RouterNat has NO labels.
+    const routerNat = new gcp.compute.RouterNat(
+      this.resourceName,
+      {
+        region: this.region,
+        router: router.name,
+        ...routerNatConfig,
+      },
+      {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
+    );
     return routerNat;
   }
 
@@ -133,7 +180,11 @@ export class CloudInfraNat {
       priority: 1000,
     };
 
-    const defaultRoute = new gcp.compute.Route(this.resourceName, routeConfig);
+    // v1: root-level → alias back to root. Route has NO labels.
+    const defaultRoute = new gcp.compute.Route(this.resourceName, routeConfig, {
+      parent: this,
+      aliases: [{ parent: pulumi.rootStackResource }],
+    });
     return defaultRoute;
   }
 
