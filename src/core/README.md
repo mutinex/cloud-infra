@@ -6,12 +6,11 @@ The `cloud-infra/core` directory contains the foundational modules that power th
 
 ### 🔧 **Foundational Systems**
 
-- **[config.ts](../config.ts)** - Centralized configuration management
+- **[config.ts](../config.ts)** - Centralized configuration constants
 - **[logging.ts](./logging.ts)** - Structured logging with component context
 - **[errors.ts](./errors.ts)** - Enhanced error hierarchy with context
-- **[validation.ts](./validation.ts)** - Consolidated validation functions
 - **[helpers.ts](./helpers.ts)** - Essential utility functions
-- **[naming.ts](./naming.ts)** - Resource naming management
+- **[component/naming.ts](./component/naming.ts)** - Name-first construction (`NamingArgs` / `NamingMode`)
 
 ### 🧩 **Core Components**
 
@@ -92,32 +91,22 @@ throw new ValidationError(
 throw new ResourceError('Failed to create bucket', 'storage', 'createBucket');
 ```
 
-### Validation
+### Name-First Component Construction
 
-Use centralized validation functions:
+v2 components are constructed name-first via the `resolveMeta` /
+`NamingArgs` / `NamingMode` surface in `component/naming.ts`:
 
 ```typescript
-import {
-  validateSingleName,
-  validateRequiredString,
-  isValidGcpProjectId,
-} from '@mutinex/cloud-infra/core/validation';
+import { CloudInfraAccount } from '@mutinex/cloud-infra';
 
-// Validate single vs array inputs
-const name = validateSingleName(input.name, 'MyComponent', 'MyBulkComponent');
-
-// Validate required strings
-const projectId = validateRequiredString(
-  input.project,
-  'project',
-  'MyComponent'
-);
-
-// Validate GCP-specific formats
-if (!isValidGcpProjectId(projectId)) {
-  throw new ValidationError('Invalid project ID format');
-}
+// new CloudInfraX("name", { domain, location, prefix, naming, ...config })
+const sa = new CloudInfraAccount('my-app', {
+  domain: 'au',
+  naming: 'conventional', // 'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }
+});
 ```
+
+See the [Meta README](./meta/README.md) for the full `NamingMode` formula table.
 
 ## 📚 Detailed Module Documentation
 
@@ -169,11 +158,10 @@ Enhanced error hierarchy that extends standard JavaScript errors with component 
 
 ```typescript
 import {
-  CloudInfraError, // Base error class
+  CloudInfraError, // Base (abstract) error class
   ValidationError, // Input validation failures
   ResourceError, // Infrastructure/resource failures
   ConfigurationError, // Configuration issues
-  ReferenceError, // Reference resolution failures
 } from './errors';
 ```
 
@@ -215,63 +203,6 @@ All errors include:
 - `operation`: Operation during which error occurred (optional)
 - `cause`: Original error that caused this error (optional)
 
-## ✅ Validation System (`validation.ts`)
-
-Centralized validation functions that eliminate duplicate validation logic across components.
-
-### Core Validation Functions
-
-```typescript
-import {
-  validateSingleName,
-  validateRequiredString,
-  isValidEmail,
-  isValidGcpResourceName,
-  isValidGcpProjectId,
-} from './validation';
-```
-
-### Function Reference
-
-#### `validateSingleName(name, componentName, bulkAlternative?)`
-
-Validates that input is a single string (not an array).
-
-```typescript
-// Throws if name is array or not string
-const validName = validateSingleName(
-  input.name,
-  'CloudInfraBucket', // Component name for error
-  'CloudInfraBulkBucket' // Alternative for arrays (optional)
-);
-```
-
-#### `validateRequiredString(value, fieldName, componentName)`
-
-Validates required string fields.
-
-```typescript
-const projectId = validateRequiredString(
-  input.project,
-  'project', // Field name for error
-  'CloudInfraProject' // Component name for error
-);
-```
-
-#### `isValidEmail(email)`, `isValidGcpResourceName(name)`, `isValidGcpProjectId(projectId)`
-
-Boolean validation functions for specific formats.
-
-```typescript
-if (!isValidEmail(userEmail)) {
-  throw new ValidationError('Invalid email format');
-}
-
-if (!isValidGcpProjectId(projectId)) {
-  throw new ValidationError('Invalid GCP project ID');
-}
-```
-
 ## 🔧 Reference System Configuration
 
 The reference system allows you to consume outputs from other Pulumi stacks with a simplified, type-safe API.
@@ -311,22 +242,34 @@ export const resourceTypeMap: Record<string, string> = {
 | `secret`                          | `gcp:secretmanager:Secret`                |
 | `secretversion`                   | `gcp:secretmanager:SecretVersion`         |
 | `certmap`                         | `gcp:certificatemanager:CertificateMap`   |
+| `cloudrun`                        | `gcp:cloudrunv2:Service`                  |
 
 ### Usage Example
+
+Use the v2 `get()` API: resolve a resource by name and read a lazy field. Pass
+`{ type }` only to disambiguate a name shared across types; omit it for a
+cross-type scan. The legacy `getId()` / `getEmail()` getters are `@deprecated`.
 
 ```typescript
 import { CloudInfraReference } from '@mutinex/cloud-infra';
 
-const ref = new CloudInfraReference({
-  stack: 'organization/base/prd',
-  domain: 'au',
-});
+// Name-first (positional) construction; `domain` is optional.
+const ref = new CloudInfraReference('organization/base/prd', { domain: 'au' });
 
-// Use aliases for cleaner code
-const networkId = ref.getId('network', 'default');
-const bucketId = ref.getId('gcs', 'data-bucket');
-const saEmail = ref.getEmail('sa', 'api-service');
+const networkId = ref.get('default', { type: 'network' }).id;
+const bucketId = ref.get('data-bucket', { type: 'gcs' }).id;
+const saEmail = ref.get('api-service', { type: 'sa' }).email;
+
+// Reading the v2 flat-output wire (CloudInfraOutput.getFlatOutputs()):
+const flatRef = new CloudInfraReference('organization/base/prd', {
+  domain: 'au',
+  flat: true,
+});
+const flatSaEmail = flatRef.get('api-service').email;
 ```
+
+See the [Reference README](./reference/README.md) for the full `get()` surface,
+the flat-wire reader, and the deprecation table.
 
 ## 🛡️ Adding a New Access-Matrix Resource Type
 
@@ -451,6 +394,7 @@ The access-matrix currently supports these GCP resource types:
 - **Cloud Run Services & Jobs**: `gcp:cloudrunv2/service:Service`, `gcp:cloudrunv2/job:Job`
 - **Secrets**: `gcp:secretmanager/secret:Secret`, `gcp:secretmanager/regionalSecret:RegionalSecret`
 - **Subnetworks**: `gcp:compute/subnetwork:Subnetwork`
+- **Compute Instances**: `gcp:compute/instance:Instance`
 - **Artifact Registry Repositories**: `gcp:artifactregistry/repository:Repository`
 
 ## 🏗️ Architecture Principles
