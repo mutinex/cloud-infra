@@ -48,8 +48,17 @@ export type CloudInfraRepositoryConfig = Omit<
  * `prefix` / `naming`) together with the repository config
  * ({@link CloudInfraRepositoryConfig}) into a single args object. The naming
  * fields are resolved into a `CloudInfraMeta` internally (identical
- * `generateName` output, Frozen Contract F1); the remaining fields are passed
- * straight through as the repository config.
+ * `generateName` output, Frozen Contract F1); the remaining config fields are
+ * passed straight through.
+ *
+ * NB: `location` is `Omit`-ted from the config side because it also exists on
+ * {@link NamingArgs} (the two have different types — naming `location` is the
+ * meta input, config `location` was a `pulumi.Input<string>`). In the
+ * name-first surface `location` is NAMING metadata: it feeds `meta.getLocation()`,
+ * which is exactly what the repository uses for the resource location, so the
+ * single `location` here drives the deployed location. The legacy config-level
+ * `location` override (setting a resource location DIFFERENT from the naming
+ * location) is only reachable via the deprecated meta-first overload.
  */
 export type CloudInfraRepositoryArgs = NamingArgs &
   Omit<CloudInfraRepositoryConfig, 'location'>;

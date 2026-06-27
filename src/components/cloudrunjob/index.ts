@@ -30,8 +30,16 @@ export type CloudInfraCloudRunJobConfig = Omit<
  * `prefix` / `naming`) together with the job config
  * ({@link CloudInfraCloudRunJobConfig}) into a single args object. The naming
  * fields are resolved into a `CloudInfraMeta` internally (identical
- * `generateName` output, Frozen Contract F1); the remaining fields are passed
- * straight through as the job config.
+ * `generateName` output, Frozen Contract F1); the remaining config fields are
+ * passed straight through.
+ *
+ * NB: `location` is `Omit`-ted from the config side because it also exists on
+ * {@link NamingArgs} (with a different type). In the name-first surface
+ * `location` is NAMING metadata that flows into the meta; the job region then
+ * resolves via `deriveRegion(meta)`, so the single `location` here drives the
+ * deployed region. The legacy config-level `location` override (a region
+ * DIFFERENT from the naming location) is only reachable via the deprecated
+ * meta-first overload.
  */
 export type CloudInfraCloudRunJobArgs = NamingArgs &
   Omit<CloudInfraCloudRunJobConfig, 'location'>;

@@ -140,6 +140,10 @@ export class CloudInfraRole extends CloudInfraComponent {
       const { domain, location, prefix, naming, ...rest } =
         argsOrConfig as CloudInfraRoleArgs;
       meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      // `CloudInfraRoleConfig` is a discriminated union; the rest-spread of
+      // `NamingArgs & (Project | Org)` loses the union narrowing, so a cast is
+      // needed. It is sound — the four naming keys are disjoint from both union
+      // members, so removing them leaves a structurally valid role config.
       cloudInfraConfig = rest as CloudInfraRoleConfig;
     } else {
       meta = nameOrMeta;
