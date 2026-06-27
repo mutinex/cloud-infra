@@ -64,5 +64,6 @@ export {
   serviceAliasMap,
   deriveServiceAliasFallback,
   getServiceAlias,
+  getTypeForServiceAlias,
   deriveRegionSegment,
 } from '../flat-key-grammar';

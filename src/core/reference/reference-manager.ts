@@ -7,6 +7,7 @@ import {
   getDefaultOutputKey,
   resourceTypeMap,
   getServiceAlias,
+  getTypeForServiceAlias,
   FLAT_KEY_SEPARATOR,
 } from './config';
 import type {
@@ -722,12 +723,20 @@ export class CloudInfraReference {
    * nested wire. In domain-optional mode each flat string output becomes one
    * entry with `domain`/`type` set to `undefined`.
    *
+   * `type` carries the FULL Pulumi type in BOTH the nested and the flat wire
+   * (cross-mode parity): the nested wire stores it directly, and flat mode
+   * reverse-maps the key's short `<service>` segment back to its full type via
+   * the unambiguous alias table. Flat mode ADDITIONALLY exposes the short
+   * service alias under `service` (the nested wire has no service alias, so the
+   * field is absent there).
+   *
    * @returns A `pulumi.Output` of all records in the referenced stack.
    */
   public all(): pulumi.Output<
     Array<{
       domain?: string;
       type?: string;
+      service?: string;
       name: string;
       record: ResourceOutput;
     }>
@@ -749,9 +758,12 @@ export class CloudInfraReference {
       });
     }
 
-    // Flat mode: re-assemble every grouped record from the keyed map. The
-    // `type` surfaced here is the flat key's `service` segment (the producer
-    // emits the service alias, not the full Pulumi type).
+    // Flat mode: re-assemble every grouped record from the keyed map. The flat
+    // key carries only the short `<service>` alias, so reverse-map it back to
+    // the FULL Pulumi type for `type` (matching the nested wire); when the alias
+    // has no explicit mapping (a derived fallback), `type` falls back to the
+    // alias itself so the field is never empty. The short alias is also exposed
+    // under `service`.
     if (this.flat) {
       return this.stackRef.getOutput(this.outputKey).apply((raw: unknown) => {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -761,7 +773,8 @@ export class CloudInfraReference {
           raw as Record<string, unknown>
         ).map(g => ({
           domain: g.domain,
-          type: g.service,
+          type: getTypeForServiceAlias(g.service) ?? g.service,
+          service: g.service,
           name: g.name,
           record: g.record,
         }));

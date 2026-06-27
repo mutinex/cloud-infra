@@ -206,29 +206,44 @@ describe('flat reader mode (keyed map)', () => {
   });
 
   describe('all()', () => {
-    it('returns every grouped record with domain/service(type)/name addressing', () => {
+    it('surfaces the FULL Pulumi type under `type` (cross-mode parity) and the alias under `service`', () => {
       const entries = flatRef('au').all() as unknown as Array<{
         domain?: string;
         type?: string;
+        service?: string;
         name: string;
         record: Record<string, unknown>;
       }>;
       // my-app (sa) + collision (sa) + collision (bucket) + api (run) = 4 groups.
       expect(entries).toHaveLength(4);
+      // `type` is the FULL Pulumi type — exactly what the nested wire surfaces
+      // for the same resource — NOT the short alias. `service` carries the alias.
       expect(entries).toContainEqual(
         expect.objectContaining({
           domain: 'au',
-          type: 'sa',
+          type: 'gcp:serviceaccount:Account',
+          service: 'sa',
           name: 'my-app',
         })
       );
       expect(entries).toContainEqual(
         expect.objectContaining({
           domain: 'au',
-          type: 'bucket',
+          type: 'gcp:storage:Bucket',
+          service: 'bucket',
           name: 'collision',
         })
       );
+      // Cross-mode parity: the flat `type` must equal the full Pulumi type the
+      // nested `all()` records under `type`. The `run` service maps back to its
+      // full type too.
+      const api = entries.find(e => e.name === 'api');
+      expect(api?.type).toBe('gcp:cloudrunv2:Service');
+      expect(api?.service).toBe('run');
+      // No flat `type` is ever a bare short alias when the alias is mapped.
+      for (const e of entries) {
+        expect(e.type).toMatch(/^gcp:/);
+      }
     });
 
     it('all() record contains only resource fields', () => {

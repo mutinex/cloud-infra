@@ -93,6 +93,41 @@ export const serviceAliasMap: Record<string, string> = {
 };
 
 /**
+ * The REVERSE of {@link serviceAliasMap}: short service alias → full Pulumi
+ * type. Built once at module load. The alias→type direction MUST be
+ * unambiguous (each service segment maps to exactly one Pulumi type) — if two
+ * types ever shared an alias the reverse would be lossy, so we THROW at load
+ * rather than silently pick one. (The alias-coverage test independently pins
+ * alias uniqueness; this is the runtime backstop the consumer relies on.)
+ */
+const serviceAliasToType: Record<string, string> = (() => {
+  const reverse: Record<string, string> = {};
+  for (const [type, alias] of Object.entries(serviceAliasMap)) {
+    const prior = reverse[alias];
+    if (prior !== undefined && prior !== type) {
+      throw new Error(
+        `Ambiguous flat-output service alias '${alias}': mapped from both ` +
+          `'${prior}' and '${type}'. The alias→type reverse lookup must be ` +
+          `one-to-one; give each type a distinct alias in serviceAliasMap.`
+      );
+    }
+    reverse[alias] = type;
+  }
+  return reverse;
+})();
+
+/**
+ * Reverse-maps a flat-key `<service>` segment (a short alias) back to the FULL
+ * Pulumi type that produced it, or `undefined` if the alias has no explicit
+ * mapping (e.g. it came from {@link deriveServiceAliasFallback}). Used by the
+ * consumer's flat `all()` to surface the full Pulumi type under `type` for
+ * cross-mode parity with the nested wire.
+ */
+export function getTypeForServiceAlias(alias: string): string | undefined {
+  return serviceAliasToType[alias];
+}
+
+/**
  * Deterministic fallback alias for a type token that has no EXPLICIT entry in
  * {@link serviceAliasMap}: the lowercased final token of a `gcp:x/y:Z` string
  * (the segment after the last `:`). e.g. `gcp:foo:BarBaz` → `barbaz`.
