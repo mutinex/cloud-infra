@@ -4,12 +4,10 @@
 import * as pulumi from '@pulumi/pulumi';
 import { CloudInfraMeta } from '../meta';
 import {
-  GcpMultiRegions,
-  GcpPredefinedDualRegions,
-  GcpDualRegionLocations,
-  getRegionCode,
-} from '../meta/locations';
-import { FLAT_KEY_SEPARATOR, getServiceAlias } from '../reference/config';
+  FLAT_KEY_SEPARATOR,
+  getServiceAlias,
+  deriveRegionSegment,
+} from '../flat-key-grammar';
 
 /**
  * Defines the structure for a resource entry that can be recorded by the
@@ -142,39 +140,6 @@ const FLAT_SCALAR_FIELDS = [
   'number',
   'version',
 ] as const satisfies readonly (keyof OutputResourceEntry)[];
-
-/**
- * Derives the deterministic short `region` segment for a flat-output key from
- * a {@link CloudInfraMeta}, mirroring the `<region>` naming used elsewhere:
- *
- *   - single region (e.g. `us-central1`) → `getRegionCode` → `us-c1`;
- *   - multi-region code (e.g. `us`, `eu`, `asia`) → the token verbatim;
- *   - dual-region (array, e.g. `[australia-southeast1, australia-southeast2]`)
- *     → `meta.getLocation()` resolves it to its canonical multi/dual-region
- *     token (e.g. `au`, `nam4`) which is used verbatim.
- *
- * The choice for multi/dual regions (use the canonical GCP location token
- * rather than concatenating per-region codes) is documented in
- * `core/output/README.md`; it is deterministic and collision-stable.
- */
-const MULTI_REGION_TOKENS: ReadonlySet<string> = new Set<string>([
-  ...GcpMultiRegions,
-  ...GcpPredefinedDualRegions,
-  ...GcpDualRegionLocations,
-]);
-
-function deriveRegionSegment(meta: CloudInfraMeta): string {
-  // `getLocation()` collapses a dual-region array to its canonical token, so it
-  // returns a single string: a single region, a multi-region code, or a
-  // dual-region code.
-  const location = meta.getLocation();
-  // Multi-region / dual-region canonical token (e.g. "us", "eu", "au", "nam4")
-  // is used verbatim; only a true single region is shortened via getRegionCode.
-  if (MULTI_REGION_TOKENS.has(location)) {
-    return location;
-  }
-  return getRegionCode(location);
-}
 
 /**
  * Manages structured output recording for Pulumi resources.
