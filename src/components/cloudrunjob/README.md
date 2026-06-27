@@ -12,13 +12,10 @@
 ## Quick reference
 
 ```ts
-import {
-  CloudInfraMeta,
-  CloudInfraCloudRunJob,
-} from '@mutinex/cloud-infra';
+import { CloudInfraCloudRunJob } from '@mutinex/cloud-infra';
 ```
 
-- Constructor – `new CloudInfraCloudRunJob(meta, config?)`
+- Constructor – `new CloudInfraCloudRunJob(name, config?)`
 - Outputs – `.getJob()`, `.getName()`
 - Stack outputs – `.exportOutputs(outputManager)`
 
@@ -29,9 +26,8 @@ import {
 ### 1. Minimal job (region derived automatically)
 
 ```ts
-const meta = new CloudInfraMeta({ name: 'data-sync', domain: 'us' });
-
-const job = new CloudInfraCloudRunJob(meta, {
+const job = new CloudInfraCloudRunJob('data-sync', {
+  domain: 'us',
   template: {
     template: {
       containers: [{ image: 'gcr.io/my-prj/data-sync:latest' }],
@@ -43,9 +39,8 @@ const job = new CloudInfraCloudRunJob(meta, {
 ### 2. Override region and add environment variables
 
 ```ts
-const meta = new CloudInfraMeta({ name: 'report', domain: 'au' });
-
-const job = new CloudInfraCloudRunJob(meta, {
+const job = new CloudInfraCloudRunJob('report', {
+  domain: 'au',
   location: 'australia-southeast1', // explicit override
   template: {
     template: {

@@ -328,54 +328,90 @@ const bucketId = ref.getId('gcs', 'data-bucket');
 const saEmail = ref.getEmail('sa', 'api-service');
 ```
 
-## 🛡️ Creating New Access-Matrix Components
+## 🛡️ Adding a New Access-Matrix Resource Type
 
-The access-matrix system is extensible. You can add support for new GCP resource types by implementing appropriate handlers.
+The access-matrix system is extensible. Adding support for a new GCP resource
+type touches three places: the IAM-binding dispatcher, the type-discovery
+registry, and the supported-type lists.
 
-### Step 1: Add Resource Handler
+> **Architecture note**: the former `IamBuilderRegistry` dispatch table and the
+> per-type `builders/*-builder.ts` classes were collapsed in v2. IAM bindings
+> are now created by a single `createIamBinding` switch in
+> `src/core/access-matrix/builders/iam-binding.ts`. `ResourceRegistry` still
+> exists, but only maps a Pulumi type token to a lightweight `ResourceHandler`
+> whose sole live member is `supportedType` (used for type discovery / naming).
 
-Create a new handler in `src/core/access-matrix/builders/`:
+### Step 1: Add an IAM-binding case
 
-```typescript
-// my-resource-builder.ts
-import { ResourceHandler } from '../resources/resource-types';
-import * as gcp from '@pulumi/gcp';
-
-export const myResourceHandler: ResourceHandler<gcp.myservice.MyResource> = {
-  getResourceName: resource => resource.name || 'unknown-my-resource',
-
-  createIamBinding: (resource, role, members, bindingName) => {
-    return new gcp.myservice.MyResourceIamBinding(bindingName, {
-      myResource: resource.name,
-      role: role,
-      members: members,
-    });
-  },
-};
-```
-
-### Step 2: Register the Handler
-
-Add your handler to the registry in `src/core/access-matrix/builders/iam-builder-registry.ts`:
+In `src/core/access-matrix/builders/iam-binding.ts`, add a `build*IamBinding`
+helper and wire it into the `createIamBinding` switch:
 
 ```typescript
-import { myResourceHandler } from './my-resource-builder';
+// in iam-binding.ts
+function buildMyResourceIamBinding(
+  params: IamBindingParams
+): pulumi.CustomResource {
+  const { resource, role, member, resourceName } = params;
+  // ...extract the id/location from `resource` (component getter, direct
+  //    Pulumi resource, or fallback property)...
+  return new gcp.myservice.MyResourceIamMember(resourceName, {
+    myResource: /* extracted id */,
+    role,
+    member,
+  });
+}
 
-// Add to the registry
-registry.registerHandler('gcp:myservice:MyResource', myResourceHandler);
+export function createIamBinding(
+  resourceType: string,
+  params: IamBindingParams
+): pulumi.CustomResource {
+  switch (resourceType) {
+    // ...existing cases...
+    case 'gcp:myservice/myResource:MyResource':
+      return buildMyResourceIamBinding(params);
+    // ...
+  }
+}
 ```
 
-### Step 3: Add Type Support
+Also add the new type token to the `SUPPORTED_RESOURCE_TYPES` array in the same
+file (it backs the "Available types: ..." diagnostic).
 
-Add the resource type to the supported types in `src/core/access-matrix/resources/resource-types.ts`:
+### Step 2: Add a ResourceHandler and register it
+
+Add the handler interface/impl (`resources/resource-types.ts` and
+`resources/resource-handlers.ts`) — the handler only needs to declare its
+`supportedType`:
 
 ```typescript
-export type SupportedResources =
-  | gcp.organizations.Project
-  | gcp.storage.Bucket
-  | gcp.myservice.MyResource; // Add your type here
-// ... other types
+// resource-types.ts
+export interface MyResourceResourceHandler extends ResourceHandler {
+  readonly supportedType: 'gcp:myservice/myResource:MyResource';
+}
+
+// resource-handlers.ts
+export class MyResourceResourceHandlerImpl
+  implements MyResourceResourceHandler
+{
+  readonly supportedType = 'gcp:myservice/myResource:MyResource' as const;
+}
 ```
+
+Register it in `src/core/access-matrix/registry-initializer.ts`:
+
+```typescript
+ResourceRegistry.register(
+  'gcp:myservice/myResource:MyResource',
+  MyResourceResourceHandlerImpl
+);
+```
+
+### Step 3: Add the type token to the supported-type lists
+
+Add the new token to `SUPPORTED_RESOURCE_TYPES` in
+`resources/resource-types.ts` (and a `get*` getter to
+`RESOURCE_DISCOVERY_GETTERS` if the resource is wrapped by a CloudInfra
+component that exposes one).
 
 ### Step 4: Test Your Handler
 

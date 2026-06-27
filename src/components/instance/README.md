@@ -11,13 +11,10 @@
 ## Quick reference
 
 ```ts
-import {
-  CloudInfraMeta,
-  CloudInfraComputeInstance,
-} from '@mutinex/cloud-infra';
+import { CloudInfraComputeInstance } from '@mutinex/cloud-infra';
 ```
 
-- Constructor – `new CloudInfraComputeInstance(meta, config)`
+- Constructor – `new CloudInfraComputeInstance(name, config)`
 - Helpful getters – `.getInternalIp()`, `.getExternalIp()`, `.getZone()`
 - Stack outputs – `.exportOutputs(outputManager)`
 
@@ -28,13 +25,9 @@ import {
 ### 1. Basic web server instance
 
 ```ts
-const webServerMeta = new CloudInfraMeta({
-  name: 'web-server',
+export const webServerInstance = new CloudInfraComputeInstance('web-server', {
   domain: 'au',
   gcpProject: 'my-project',
-});
-
-export const webServerInstance = new CloudInfraComputeInstance(webServerMeta, {
   machineType: 'e2-micro',
   bootDisk: {
     initializeParams: {
@@ -60,13 +53,9 @@ export const webServerInstance = new CloudInfraComputeInstance(webServerMeta, {
 ### 2. Database instance with custom zone and service account
 
 ```ts
-const dbMeta = new CloudInfraMeta({
-  name: 'database',
+export const databaseInstance = new CloudInfraComputeInstance('database', {
   domain: 'us',
   gcpProject: 'my-project',
-});
-
-export const databaseInstance = new CloudInfraComputeInstance(dbMeta, {
   zone: 'us-central1-b', // Override default zone
   machineType: 'n1-standard-2',
   bootDisk: {

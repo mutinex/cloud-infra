@@ -34,60 +34,45 @@ import {
 ### 1. Create a PostgreSQL instance with VPC integration
 
 ```ts
-const masterSqlInstanceMeta = new CloudInfraMeta({
-  name: 'master',
+const masterSqlInstance = new CloudInfraDatabaseInstance('master', {
   domain: 'au',
   location: 'australia-southeast1',
-});
-
-const masterSqlInstance = new CloudInfraDatabaseInstance(
-  masterSqlInstanceMeta,
-  {
-    project: 'my-project',
-    databaseVersion: 'POSTGRES_17',
-    rootPassword: masterInstancePassword.getVersion().secretData,
-    deletionProtection: false,
-    settings: {
-      edition: 'ENTERPRISE',
-      tier: 'db-f1-micro',
-      ipConfiguration: {
-        ipv4Enabled: true,
-        privateNetwork: baseNetwork,
-        enablePrivatePathForGoogleCloudServices: true,
-      },
-      availabilityType: 'ZONAL',
-      backupConfiguration: {
-        backupRetentionSettings: {
-          retainedBackups: 10,
-        },
-        enabled: true,
-        pointInTimeRecoveryEnabled: true,
-        startTime: '14:00',
-      },
+  project: 'my-project',
+  databaseVersion: 'POSTGRES_17',
+  rootPassword: masterInstancePassword.getVersion().secretData,
+  deletionProtection: false,
+  settings: {
+    edition: 'ENTERPRISE',
+    tier: 'db-f1-micro',
+    ipConfiguration: {
+      ipv4Enabled: true,
+      privateNetwork: baseNetwork,
+      enablePrivatePathForGoogleCloudServices: true,
     },
-  }
-);
+    availabilityType: 'ZONAL',
+    backupConfiguration: {
+      backupRetentionSettings: {
+        retainedBackups: 10,
+      },
+      enabled: true,
+      pointInTimeRecoveryEnabled: true,
+      startTime: '14:00',
+    },
+  },
+});
 ```
 
 ### 2. Create a database and user with connection string
 
 ```ts
-const apiDbMeta = new CloudInfraMeta({
-  name: 'api',
+const apiDb = new CloudInfraDatabase('api', {
   domain: 'au',
-});
-
-const apiDb = new CloudInfraDatabase(apiDbMeta, {
   project: 'my-project',
   instance: masterSqlInstance.getInstance().name,
 });
 
-const apiDbUserMeta = new CloudInfraMeta({
-  name: 'api-user',
+const apiDbUser = new CloudInfraDatabaseUser('api-user', {
   domain: 'au',
-});
-
-const apiDbUser = new CloudInfraDatabaseUser(apiDbUserMeta, {
   project: 'my-project',
   instance: masterSqlInstance.getInstance().name,
   password: apiDbUserPassword.result,

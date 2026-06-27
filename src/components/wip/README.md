@@ -15,26 +15,23 @@ short-lived GCP credentials without service-account keys.
 
 ```typescript
 import {
-  CloudInfraMeta,
   CloudInfraWIP,
   CloudInfraWIPProvider,
 } from '@mutinex/cloud-infra';
 import { hostProject } from './projects'; // existing Host/Service project
 
-const meta = new CloudInfraMeta({
-  name: 'github',
+// 1️⃣ Create (or import) a Workload Identity Pool in the host project
+const ghaPool = new CloudInfraWIP('github', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-// 1️⃣ Create (or import) a Workload Identity Pool in the host project
-const ghaPool = new CloudInfraWIP(meta, {
   project: hostProject.getProjectId(),
   displayName: 'GitHub Actions Pool',
 });
 
 // 2️⃣ Add an OIDC provider that trusts `token.actions.githubusercontent.com`
-const ghaProvider = new CloudInfraWIPProvider(meta, {
+const ghaProvider = new CloudInfraWIPProvider('github', {
+  omitPrefix: true,
+  omitDomain: true,
   project: hostProject.getProjectId(),
   workloadIdentityPoolId: ghaPool.getId(),
   displayName: 'GitHub OIDC Provider',
@@ -74,7 +71,6 @@ The following examples are based on actual production GitHub Actions integration
 ```ts
 import * as pulumi from '@pulumi/pulumi';
 import {
-  CloudInfraMeta,
   CloudInfraWIP,
   CloudInfraWIPProvider,
   CloudInfraAccessMatrix,
@@ -83,19 +79,17 @@ import { baseProject, sharedProjectName } from './projects';
 import { ghaAccounts, organizationGhaAccounts } from './accounts';
 
 // Create Workload Identity Pool for GitHub Actions
-const ghaMeta = new CloudInfraMeta({
-  name: 'github',
+const ghaWip = new CloudInfraWIP('github', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-const ghaWip = new CloudInfraWIP(ghaMeta, {
   project: baseProject.getProjectId(),
   displayName: `GitHub Actions Pool`,
 });
 
 // Create OIDC Provider with comprehensive attribute mapping
-export const ghaWipProvider = new CloudInfraWIPProvider(ghaMeta, {
+export const ghaWipProvider = new CloudInfraWIPProvider('github', {
+  omitPrefix: true,
+  omitDomain: true,
   project: baseProject.getProjectId(),
   workloadIdentityPoolId: ghaWip.getId(),
   displayName: `GitHub Actions Provider`,

@@ -12,13 +12,10 @@
 ## Quick reference
 
 ```ts
-import {
-  CloudInfraMeta,
-  CloudInfraCloudRunService,
-} from '@mutinex/cloud-infra';
+import { CloudInfraCloudRunService } from '@mutinex/cloud-infra';
 ```
 
-- Constructor – `new CloudInfraCloudRunService(meta, config?)`
+- Constructor – `new CloudInfraCloudRunService(name, config?)`
 - Helpful getters – `.getUri()`, `.getNetworkEndpointGroup()`
 - Stack outputs – `.exportOutputs(outputManager)`
 
@@ -29,14 +26,10 @@ import {
 ### 1. API service with VPC access and scaling
 
 ```ts
-const apiAuServiceMeta = new CloudInfraMeta({
-  name: 'api',
+export const apiAuService = new CloudInfraCloudRunService('api', {
   domain: 'au',
   location: 'australia-southeast1',
   preview: previewName,
-});
-
-export const apiAuService = new CloudInfraCloudRunService(apiAuServiceMeta, {
   project: gcpProjectId,
   deletionProtection: false,
   ingress: 'INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER',
@@ -75,14 +68,10 @@ export const apiAuService = new CloudInfraCloudRunService(apiAuServiceMeta, {
 ### 2. Frontend service with multi-region deployment
 
 ```ts
-const frontendAuMeta = new CloudInfraMeta({
-  name: 'frontend',
+export const frontendAuService = new CloudInfraCloudRunService('frontend', {
   domain: 'au',
   location: 'australia-southeast1',
   preview: previewName,
-});
-
-export const frontendAuService = new CloudInfraCloudRunService(frontendAuMeta, {
   project: gcpProjectId,
   deletionProtection: false,
   ingress: 'INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER',

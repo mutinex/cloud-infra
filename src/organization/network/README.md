@@ -97,13 +97,9 @@ const networkConfig = new pulumi.Config('cloudInfra');
 const subnet = networkConfig.getObject<Record<string, string>>('network') ?? {};
 
 // Private Service Access for Cloud SQL
-const psaMeta = new CloudInfraMeta({
-  name: 'psa',
+export const psa = new CloudInfraPSA('psa', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-export const psa = new CloudInfraPSA(psaMeta, {
   network: baseProject.getSharedVpcName(),
   reservedPeeringRanges: [
     {
@@ -166,15 +162,11 @@ export const vconUsC1 = new CloudInfraConnector(vconUsC1Meta, {
 
 ```ts
 // Proxy subnet for Application Load Balancer
-const proxySubnetAuSe1Meta = new CloudInfraMeta({
-  name: 'proxy-au-se1',
+export const proxySubnetAuSe1 = new CloudInfraSubnet('proxy-au-se1', {
   domain: 'au',
   omitPrefix: true,
   omitDomain: true,
   location: 'australia-southeast1',
-});
-
-export const proxySubnetAuSe1 = new CloudInfraSubnet(proxySubnetAuSe1Meta, {
   project: baseProject.getProjectId(),
   purpose: 'REGIONAL_MANAGED_PROXY',
   role: 'ACTIVE',
@@ -187,28 +179,20 @@ export const proxySubnetAuSe1 = new CloudInfraSubnet(proxySubnetAuSe1Meta, {
 
 ```ts
 // Australia Southeast 1 subnet
-const subnetAuSe1Meta = new CloudInfraMeta({
-  name: 'subnet',
+export const subnetAuSe1 = new CloudInfraSubnet('subnet', {
   domain: 'au',
   omitPrefix: true,
   location: 'australia-southeast1',
-});
-
-export const subnetAuSe1 = new CloudInfraSubnet(subnetAuSe1Meta, {
   project: baseProject.getProjectId(),
   network: baseProject.getSharedVpcName(),
   ipCidrRange: subnet['subnetAuSe1'],
 });
 
 // US Central 1 subnet
-const subnetUsC1Meta = new CloudInfraMeta({
-  name: 'subnet',
+export const subnetUsC1 = new CloudInfraSubnet('subnet', {
   domain: 'us',
   omitPrefix: true,
   location: 'us-central1',
-});
-
-export const subnetUsC1 = new CloudInfraSubnet(subnetUsC1Meta, {
   project: baseProject.getProjectId(),
   network: baseProject.getSharedVpcName(),
   ipCidrRange: subnet['subnetUsC1'],

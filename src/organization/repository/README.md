@@ -10,13 +10,11 @@ This component creates a Google Artifact Registry **repository** that follows th
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraRepository,
 } from '@mutinex/cloud-infra';
 
 // Creates a Docker repository in the default project & location inferred from the domain
-const meta = new CloudInfraMeta({ name: 'docker', domain: 'au' });
-const repo = new CloudInfraRepository(meta);
+const repo = new CloudInfraRepository('docker', { domain: 'au' });
 
 export const repoName = repo.getName();
 ```
@@ -24,7 +22,8 @@ export const repoName = repo.getName();
 ### Override any `RepositoryArgs`
 
 ```ts
-const repo = new CloudInfraRepository(meta, {
+const repo = new CloudInfraRepository('docker', {
+  domain: 'au',
   format: 'DOCKER',
   description: 'Container images for my service',
   cleanupPolicies: [
@@ -48,24 +47,18 @@ The following example is based on actual production infrastructure:
 ```ts
 import * as pulumi from '@pulumi/pulumi';
 import {
-  CloudInfraMeta,
   CloudInfraRepository,
 } from '@mutinex/cloud-infra';
 import { orgProject } from './projects';
-
-// Create repository metadata with regional location
-export const growthosRepoMeta = new CloudInfraMeta({
-  name: 'growthos',
-  domain: 'au',
-  location: 'australia-southeast1',
-  omitPrefix: true,
-});
 
 // Conditional repository creation based on stack
 const growthosRepo: CloudInfraRepository | undefined =
   pulumi.getStack() === 'prd'
     ? (() => {
-        return new CloudInfraRepository(growthosRepoMeta, {
+        return new CloudInfraRepository('growthos', {
+          domain: 'au',
+          location: 'australia-southeast1',
+          omitPrefix: true,
           project: orgProject.getProjectId(),
         });
       })()
@@ -131,11 +124,11 @@ export const infra = output.getOutputs();
 ### Constructor
 
 ```ts
-new CloudInfraRepository(meta: CloudInfraMeta, overrides?: Partial<gcp.artifactregistry.RepositoryArgs>);
+new CloudInfraRepository(name: string, config?: CloudInfraMetaInput & Partial<gcp.artifactregistry.RepositoryArgs>);
 ```
 
-- **`meta`** – Required `CloudInfraMeta` instance controlling naming, prefix, domain and location.
-- **`overrides`** – Any subset of Pulumi `RepositoryArgs` to fine-tune the resource.
+- **`name`** – Required resource name controlling naming (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
+- **`config`** – Meta options (`domain`, `location`, `prefix`, `omitPrefix`, …) plus any subset of Pulumi `RepositoryArgs` to fine-tune the resource.
 
 ### Methods
 

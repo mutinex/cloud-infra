@@ -9,13 +9,10 @@
 ## Quick reference
 
 ```ts
-import {
-  CloudInfraMeta,
-  CloudInfraCertificateMap,
-} from '@mutinex/cloud-infra';
+import { CloudInfraCertificateMap } from '@mutinex/cloud-infra';
 ```
 
-- Constructor – `new CloudInfraCertificateMap(meta, config)`
+- Constructor – `new CloudInfraCertificateMap(name, args)`
 - Outputs – `cert.getManagedCertificate(key)`, `cert.getCertificateMap()`, `cert.getDomains(certName?)`
 - Stack outputs – `cert.exportOutputs(outputManager)`
 
@@ -28,14 +25,10 @@ import {
 Global certificates (domain: 'gl' or omitDomain: true) support certificate maps for use with global load balancers:
 
 ```ts
-const globalMeta = new CloudInfraMeta({
-  name: 'global-certs',
+const globalCert = new CloudInfraCertificateMap('global-certs', {
   omitDomain: true, // Creates global resources
   gcpProject: 'my-project',
   preview: 'dev',
-});
-
-const globalCert = new CloudInfraCertificateMap(globalMeta, {
   certificates: [
     {
       name: 'frontend',
@@ -68,14 +61,10 @@ const alb = new CloudInfraAlb(albMeta, {
 Regional certificates are created for specific regions and can be used with both regional and global load balancers:
 
 ```ts
-const regionalMeta = new CloudInfraMeta({
-  name: 'regional-certs',
+const regionalCert = new CloudInfraCertificateMap('regional-certs', {
   domain: 'au', // Creates regional resources in Australia
   gcpProject: 'my-project',
   preview: 'dev',
-});
-
-const regionalCert = new CloudInfraCertificateMap(regionalMeta, {
   certificates: [
     {
       name: 'frontend',
@@ -109,14 +98,10 @@ const regionalAlb = new CloudInfraAlb(albMeta, {
 ### 3. Multiple certificates with different configurations
 
 ```ts
-const multiCertMeta = new CloudInfraMeta({
-  name: 'multi-certs',
+const multiCert = new CloudInfraCertificateMap('multi-certs', {
   omitDomain: true,
   gcpProject: 'my-project',
   preview: 'prod',
-});
-
-const multiCert = new CloudInfraCertificateMap(multiCertMeta, {
   certificates: [
     {
       name: 'frontend',

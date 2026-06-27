@@ -20,7 +20,7 @@ import {
 } from '@mutinex/cloud-infra';
 ```
 
-- Constructors – `new CloudInfraBucket(meta, config?)`, `new CloudInfraBulkBucket(meta, config?)`
+- Constructors – `new CloudInfraBucket(name, args?)`, `new CloudInfraBulkBucket(meta, config?)`
 - Helpful getters – `.getName()`, `.getUrl()`
 - Stack outputs – `.exportOutputs(outputManager)`
 
@@ -31,20 +31,15 @@ import {
 ### 1. Single regional bucket
 
 ```ts
-const meta = new CloudInfraMeta({ name: 'assets', domain: 'au' });
-const bucket = new CloudInfraBucket(meta);
+const bucket = new CloudInfraBucket('assets', { domain: 'au' });
 ```
 
 ### 2. Dual-region bucket with overrides
 
 ```ts
-const meta = new CloudInfraMeta({
-  name: 'logs',
+const bucket = new CloudInfraBucket('logs', {
   domain: 'us',
   location: ['us-central1', 'us-east1'], // pre-defined dual region (nam4)
-});
-
-const bucket = new CloudInfraBucket(meta, {
   forceDestroy: true,
   storageClass: 'NEARLINE',
 });

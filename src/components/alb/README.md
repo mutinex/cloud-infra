@@ -12,10 +12,10 @@
 ## Quick reference
 
 ```ts
-import { CloudInfraMeta, CloudInfraAlb } from '@mutinex/cloud-infra';
+import { CloudInfraAlb } from '@mutinex/cloud-infra';
 ```
 
-- Constructor – `new CloudInfraAlb(meta, config?)`
+- Constructor – `new CloudInfraAlb(name, args?)`
 - Outputs – `alb.getForwardingRule()`, `alb.getIpAddress()`, `alb.getUrlMap()`, `alb.getProxy()`, `alb.getCertificate()`
 - Stack outputs – `alb.exportOutputs(outputManager)`
 
@@ -44,12 +44,8 @@ import { CloudInfraMeta, CloudInfraAlb } from '@mutinex/cloud-infra';
 ### 1. Global HTTPS load-balancer (Compute SSL)
 
 ```ts
-const meta = new CloudInfraMeta({
-  name: 'api',
+const alb = new CloudInfraAlb('api', {
   domain: 'gl', // "gl" → global resources
-});
-
-const alb = new CloudInfraAlb(meta, {
   portRange: '443',
   target: {
     sslCertificates: {
@@ -78,7 +74,8 @@ const cert = new CloudInfraCertificateMap(certMeta, {
   cloudflareZoneId: 'your-zone-id',
 });
 
-const alb = new CloudInfraAlb(meta, {
+const alb = new CloudInfraAlb('api', {
+  domain: 'gl', // "gl" → global resources
   portRange: '443',
   target: {
     certificateMap: cert.getCertificateMap()!.id,
@@ -90,12 +87,6 @@ const alb = new CloudInfraAlb(meta, {
 ### 3. Regional HTTPS load-balancer (Certificate Manager)
 
 ```ts
-const regionalMeta = new CloudInfraMeta({
-  name: 'regional-api',
-  domain: 'au',
-  location: 'australia-southeast1',
-});
-
 const regionalCert = new CloudInfraCertificateMap(regionalCertMeta, {
   certificates: [
     {
@@ -107,7 +98,9 @@ const regionalCert = new CloudInfraCertificateMap(regionalCertMeta, {
   cloudflareZoneId: 'your-zone-id',
 });
 
-const alb = new CloudInfraAlb(regionalMeta, {
+const alb = new CloudInfraAlb('regional-api', {
+  domain: 'au',
+  location: 'australia-southeast1',
   portRange: '443',
   network: baseNetwork,
   target: {
@@ -122,13 +115,9 @@ const alb = new CloudInfraAlb(regionalMeta, {
 ### 4. Regional Internal HTTPS load-balancer
 
 ```ts
-const internalMeta = new CloudInfraMeta({
-  name: 'internal-api',
+const alb = new CloudInfraAlb('internal-api', {
   domain: 'au',
   location: 'australia-southeast1',
-});
-
-const alb = new CloudInfraAlb(internalMeta, {
   portRange: '443',
   loadBalancingScheme: 'INTERNAL_MANAGED',
   network: baseNetwork,
@@ -145,14 +134,10 @@ const alb = new CloudInfraAlb(internalMeta, {
 ### 5. Regional HTTP load-balancer
 
 ```ts
-const meta = new CloudInfraMeta({
-  name: 'web',
+const alb = new CloudInfraAlb('web', {
   domain: 'au',
   // optional – overrides the default region derived from domain
   location: 'australia-southeast1',
-});
-
-const alb = new CloudInfraAlb(meta, {
   region: 'australia-southeast1',
   portRange: '80',
   target: {

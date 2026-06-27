@@ -13,18 +13,11 @@ Opinionated helper for creating **Google Artifact Registry repositories** with a
 ## Quick Start
 
 ```typescript
-import {
-  CloudInfraMeta,
-  CloudInfraRepository,
-} from '@mutinex/cloud-infra';
+import { CloudInfraRepository } from '@mutinex/cloud-infra';
 
-const meta = new CloudInfraMeta({
-  name: 'docker',
+const repo = new CloudInfraRepository('docker', {
   domain: 'us',
   location: 'europe',
-});
-
-const repo = new CloudInfraRepository(meta, {
   format: 'DOCKER',
   description: 'Docker images for US services',
 });

@@ -18,22 +18,21 @@ Both components integrate with [`CloudInfraOutput`](../../core/output/README.md)
 
 ```typescript
 import {
-  CloudInfraMeta,
   CloudInfraHostProject,
   CloudInfraServiceProject,
 } from '@mutinex/cloud-infra';
 
 // 1️⃣  Host Project – provides the Shared VPC
-const hostMeta = new CloudInfraMeta({ name: 'corp-host', omitDomain: true });
-const host = new CloudInfraHostProject(hostMeta, {
+const host = new CloudInfraHostProject('corp-host', {
+  omitDomain: true,
   folderId: '123456789012', // Place inside an existing folder
   cloudInfraTags: ['tagValues/5678901234567'],
   services: ['iam.googleapis.com', 'vpcaccess.googleapis.com'],
 });
 
 // 2️⃣  Service Project – attaches to the host
-const svcMeta = new CloudInfraMeta({ name: 'analytics-dev', omitDomain: true });
-const svc = new CloudInfraServiceProject(svcMeta, {
+const svc = new CloudInfraServiceProject('analytics-dev', {
+  omitDomain: true,
   folderId: '123456789012',
   vpcHostProject: host.getProjectId(), // Attach to Shared VPC
   services: ['run.googleapis.com', 'secretmanager.googleapis.com'],
@@ -93,7 +92,6 @@ The following examples are based on actual production infrastructure patterns:
 ```ts
 import * as pulumi from '@pulumi/pulumi';
 import {
-  CloudInfraMeta,
   CloudInfraHostProject,
   CloudInfraServiceProject,
 } from '@mutinex/cloud-infra';
@@ -102,13 +100,9 @@ import { baseFolder, orgFolder, envTag } from './refs';
 // Base Project (Host Project for Shared VPC)
 export const sharedProjectName = `org-${pulumi.getStack()}`;
 
-export const baseProjectMeta = new CloudInfraMeta({
-  name: `org-base-${pulumi.getStack()}`,
+export const baseProject = new CloudInfraHostProject(`org-base-${pulumi.getStack()}`, {
   omitDomain: true,
   omitPrefix: true,
-});
-
-export const baseProject = new CloudInfraHostProject(baseProjectMeta, {
   folderId: baseFolder,
   deletionPolicy: 'DELETE',
   cloudInfraTags: [envTag],
@@ -122,13 +116,9 @@ export const baseProject = new CloudInfraHostProject(baseProjectMeta, {
 });
 
 // Service Project for Application Workloads
-export const orgProjectMeta = new CloudInfraMeta({
-  name: sharedProjectName,
+export const orgProject = new CloudInfraServiceProject(sharedProjectName, {
   omitDomain: true,
   omitPrefix: true,
-});
-
-export const orgProject = new CloudInfraServiceProject(orgProjectMeta, {
   folderId: orgFolder,
   deletionPolicy: 'DELETE',
   vpcHostProject: baseProject.getProjectId(),
@@ -176,13 +166,13 @@ export const orgProject = new CloudInfraServiceProject(orgProjectMeta, {
 1. **Minimal Host Project inside Organisation root**
 
    ```ts
-   new CloudInfraHostProject(meta);
+   new CloudInfraHostProject('corp-host');
    ```
 
 2. **Host Project with custom folder & prevent-destroy**
 
    ```ts
-   new CloudInfraHostProject(meta, {
+   new CloudInfraHostProject('corp-host', {
      folderId: 'folders/789012345678',
      deletionPolicy: 'PREVENT',
    });
@@ -191,7 +181,7 @@ export const orgProject = new CloudInfraServiceProject(orgProjectMeta, {
 3. **Service Project enabling Cloud Run**
 
    ```ts
-   new CloudInfraServiceProject(meta, {
+   new CloudInfraServiceProject('analytics-dev', {
      vpcHostProject: host.getProjectId(),
      services: ['run.googleapis.com'],
    });
@@ -199,7 +189,7 @@ export const orgProject = new CloudInfraServiceProject(orgProjectMeta, {
 
 4. **Service Project with tags and additional APIs**
    ```ts
-   new CloudInfraServiceProject(meta, {
+   new CloudInfraServiceProject('analytics-dev', {
      vpcHostProject: host.getProjectId(),
      cloudInfraTags: ['tagValues/8901234567890'],
      services: ['run.googleapis.com', 'vpcaccess.googleapis.com'],

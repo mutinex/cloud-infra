@@ -341,12 +341,14 @@ The Access Matrix comes with built-in support for a variety of common GCP resour
 
 ### Configuration Options
 
-The Access Matrix now supports configurable defaults via `accessMatrixConfig` in the library:
+The Access Matrix reads its tuning constants from `accessMatrixConfig`, a frozen
+`as const` object exported from `src/config.ts`. These are compile-time
+constants — there is no runtime reconfiguration:
 
-- `maxResourceNameLength`: Maximum length for generated resource names (default: 100)
-- `enableDetailedLogging`: Enable detailed logging for operations (default: true)
-- `maxPrincipalsThreshold`: Performance warning threshold for principals (default: 100)
-- `defaultOperationTimeout`: Timeout for resource operations in ms (default: 30000)
+- `maxResourceNameLength`: Maximum length for generated resource names (100; frozen — Frozen Contract F3)
+- `enableDetailedLogging`: Enable detailed logging for operations (true)
+- `maxPrincipalsThreshold`: Performance warning threshold for principals (100)
+- `defaultOperationTimeout`: Timeout for resource operations in ms (30000)
 
 ### Performance Features
 

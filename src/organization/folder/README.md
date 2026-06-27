@@ -4,7 +4,7 @@ A high-level wrapper around `gcp.organizations.Folder` that applies CloudInfra c
 
 ## Features
 
-- **Name / ID generation** – `displayName` defaults to [`CloudInfraMeta.getName()`](../../core/meta/README.md).
+- **Name / ID generation** – `displayName` is derived from the name passed to the constructor (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
 - **Parent defaulting** – `parent` defaults to the organization root when not specified.
 - **Deletion protection** – `deletionProtection` defaults to `true` for safety.
 - **Tag binding support** – Automatically creates tag bindings for `cloudInfraTags`.
@@ -16,14 +16,10 @@ A high-level wrapper around `gcp.organizations.Folder` that applies CloudInfra c
 ## Quick Example
 
 ```ts
-import { CloudInfraMeta, CloudInfraFolder } from '@mutinex/cloud-infra';
+import { CloudInfraFolder } from '@mutinex/cloud-infra';
 
-const folderMeta = new CloudInfraMeta({
-  name: 'production',
+const folder = new CloudInfraFolder('production', {
   omitDomain: true,
-});
-
-const folder = new CloudInfraFolder(folderMeta, {
   cloudInfraTags: ['tagValues/1234567890'],
   deletionProtection: true,
 });
@@ -39,19 +35,14 @@ The following examples are based on actual production organization structure:
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraFolder,
   CloudInfraTag,
 } from '@mutinex/cloud-infra';
 
 // Environment Tag for governance
-const environmentTagsMeta = new CloudInfraMeta({
-  name: 'env',
+export const environmentTags = new CloudInfraTag('env', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-export const environmentTags = new CloudInfraTag(environmentTagsMeta, {
   description: 'The Environment',
   values: [
     {
@@ -74,36 +65,24 @@ export const environmentTags = new CloudInfraTag(environmentTagsMeta, {
 });
 
 // Parent Folder (top-level organization)
-const parentFolderMeta = new CloudInfraMeta({
-  name: 'my-org',
+export const parentFolder = new CloudInfraFolder('my-org', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-export const parentFolder = new CloudInfraFolder(parentFolderMeta, {
   deletionProtection: false,
 });
 
 // Base Infrastructure Folder
-const baseFolderMeta = new CloudInfraMeta({
-  name: 'base',
+export const baseFolder = new CloudInfraFolder('base', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-export const baseFolder = new CloudInfraFolder(baseFolderMeta, {
   parent: parentFolder.getFolder().id,
   deletionProtection: false,
 });
 
 // Application Workloads Folder
-const orgFolderMeta = new CloudInfraMeta({
-  name: 'org',
+export const orgFolder = new CloudInfraFolder('org', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-export const orgFolder = new CloudInfraFolder(orgFolderMeta, {
   parent: parentFolder.getFolder().id,
   deletionProtection: false,
 });
@@ -147,7 +126,7 @@ pulumi config set cloudInfra:organizationName "your-organization-name-here"
 | Field                | Type       | Default                                                 | Description                        |
 | -------------------- | ---------- | ------------------------------------------------------- | ---------------------------------- |
 | `parent`             | `string`   | Organization root                                       | Parent folder or organization ID   |
-| `displayName`        | `string`   | [`CloudInfraMeta.getName()`](../../core/meta/README.md) | Folder display name (max 30 chars) |
+| `displayName`        | `string`   | Derived from constructor name                           | Folder display name (max 30 chars) |
 | `deletionProtection` | `boolean`  | `true`                                                  | Prevents accidental deletion       |
 | `cloudInfraTags`     | `string[]` | —                                                       | Array of tag value resource IDs    |
 
@@ -156,7 +135,7 @@ pulumi config set cloudInfra:organizationName "your-organization-name-here"
 When `cloudInfraTags` is provided, the component automatically creates `gcp.tags.TagBinding` resources:
 
 ```ts
-const folder = new CloudInfraFolder(meta, {
+const folder = new CloudInfraFolder('production', {
   cloudInfraTags: [
     'tagValues/1234567890', // Environment tag
     'tagValues/0987654321', // Cost center tag
@@ -182,12 +161,12 @@ const outputManager = new CloudInfraOutput();
 folder.exportOutputs(outputManager);
 
 // Use folder as parent in other resources
-const childFolder = new CloudInfraFolder(childMeta, {
+const childFolder = new CloudInfraFolder('child', {
   parent: folder.getFolder().id,
 });
 
 // Use folder for project placement
-const project = new CloudInfraServiceProject(projectMeta, {
+const project = new CloudInfraServiceProject('analytics', {
   folderId: folder.getFolder().id,
 });
 ```
@@ -202,7 +181,7 @@ GCP folder display names must be 30 characters or less. The component validates 
 
 ```ts
 // This will throw an error if the generated name exceeds 30 characters
-const folder = new CloudInfraFolder(meta); // Validates meta.getName().length <= 30
+const folder = new CloudInfraFolder('production'); // Validates generated name length <= 30
 ```
 
 ### Single Name Requirement

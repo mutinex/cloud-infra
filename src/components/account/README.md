@@ -11,8 +11,10 @@ This package provides two thin wrappers around
 | `CloudInfraAccount`     | Manage **one** service-account.                                    |
 | `CloudInfraBulkAccount` | Manage a **set** of service-accounts derived from a single `Meta`. |
 
-Both components rely on a [`CloudInfraMeta`](../../core/meta) instance to
-calculate predictable, policy-compliant names and locations. They add zero
+Both components use [`CloudInfraMeta`](../../core/meta) naming conventions to
+calculate predictable, policy-compliant names and locations. `CloudInfraAccount`
+takes a name string directly, while `CloudInfraBulkAccount` accepts a
+`CloudInfraMeta` instance. They add zero
 runtime logic on top of the underlying Pulumi resource – the goal is to reduce
 boilerplate, not to hide functionality.
 
@@ -26,7 +28,7 @@ import {
 } from '@mutinex/cloud-infra';
 ```
 
-- **Constructor (single):** `new CloudInfraAccount(meta, config?)`
+- **Constructor (single):** `new CloudInfraAccount(name, config?)`
 - **Constructor (bulk):** `new CloudInfraBulkAccount(meta, config?)`
 - **Direct access (both):** `account.emails[name]`, `account.members[name]`, etc.
 - **Consistent API:** Single and bulk accounts use the same access pattern!
@@ -64,14 +66,12 @@ export const oldMember = pulumi.interpolate`serviceAccount:${accounts.getAccount
 ### 1. Regional single account (AU)
 
 ```ts
-import { CloudInfraMeta, CloudInfraAccount } from '@mutinex/cloud-infra';
+import { CloudInfraAccount } from '@mutinex/cloud-infra';
 
-const meta = new CloudInfraMeta({
-  name: 'api', // service-account ID will start with this
+export const apiAccount = new CloudInfraAccount('api', {
+  // service-account ID will start with the name above
   domain: 'au', // generates the "australia-southeast1" region suffix
 });
-
-export const apiAccount = new CloudInfraAccount(meta);
 
 // Using new direct property access (with actual name 'api')
 export const apiEmail = apiAccount.emails.api;
@@ -80,13 +80,9 @@ export const apiEmail = apiAccount.emails.api;
 ### 2. Global single account with custom arguments
 
 ```ts
-const meta = new CloudInfraMeta({
-  name: 'scheduler',
+export const schedulerAccount = new CloudInfraAccount('scheduler', {
   domain: 'gl', // global domain (no region suffix)
   omitDomain: true, // omit the domain part in the generated name
-});
-
-export const schedulerAccount = new CloudInfraAccount(meta, {
   description: 'Job Scheduler service account',
   disabled: true,
 });
@@ -141,15 +137,14 @@ export const frontendMemberUs = saUs.members.frontend;
 
 ```ts
 // When you need to use names that violate GCP's strict naming rules
-const meta = new CloudInfraMeta({
-  name: 'very-long-service-account-name-that-exceeds-normal-limits',
-  domain: 'gl',
-  overrideNamingRules: true, // ⚠️ Use with caution!
-});
-
-export const specialAccount = new CloudInfraAccount(meta, {
-  description: 'Legacy account with non-standard naming',
-});
+export const specialAccount = new CloudInfraAccount(
+  'very-long-service-account-name-that-exceeds-normal-limits',
+  {
+    domain: 'gl',
+    overrideNamingRules: true, // ⚠️ Use with caution!
+    description: 'Legacy account with non-standard naming',
+  }
+);
 ```
 
 ### 6. Organization-level accounts with custom descriptions

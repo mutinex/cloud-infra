@@ -4,7 +4,7 @@ A high-level wrapper around `gcp.tags.TagKey` and `gcp.tags.TagValue` that creat
 
 ## Features
 
-- **Name / ID generation** – `shortName` defaults to [`CloudInfraMeta.getName()`](../../core/meta/README.md).
+- **Name / ID generation** – `shortName` is derived from the name passed to the constructor (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
 - **Parent defaulting** – `parent` defaults to the organization root when not specified.
 - **Multi-value support** – Creates a tag key with multiple predefined values in a single component.
 - **Automatic value creation** – Tag values are automatically created for each specified value.
@@ -16,14 +16,10 @@ A high-level wrapper around `gcp.tags.TagKey` and `gcp.tags.TagValue` that creat
 ## Quick Example
 
 ```ts
-import { CloudInfraMeta, CloudInfraTag } from '@mutinex/cloud-infra';
+import { CloudInfraTag } from '@mutinex/cloud-infra';
 
-const tagMeta = new CloudInfraMeta({
-  name: 'environment',
+const environmentTag = new CloudInfraTag('environment', {
   omitDomain: true,
-});
-
-const environmentTag = new CloudInfraTag(tagMeta, {
   description: 'Environment classification',
   values: [
     {
@@ -47,16 +43,12 @@ The following example is based on actual production tag management:
 ### Environment Tag for Organization Governance
 
 ```ts
-import { CloudInfraMeta, CloudInfraTag } from '@mutinex/cloud-infra';
+import { CloudInfraTag } from '@mutinex/cloud-infra';
 
 // Environment Tag for governance and billing
-const environmentTagsMeta = new CloudInfraMeta({
-  name: 'env',
+export const environmentTags = new CloudInfraTag('env', {
   omitPrefix: true,
   omitDomain: true,
-});
-
-export const environmentTags = new CloudInfraTag(environmentTagsMeta, {
   description: 'Mutinex Environment',
   values: [
     {
@@ -88,12 +80,12 @@ import {
 } from '@mutinex/cloud-infra';
 
 // Apply environment tag to a folder
-const productionFolder = new CloudInfraFolder(folderMeta, {
+const productionFolder = new CloudInfraFolder('production', {
   cloudInfraTags: [environmentTags.getTagValue('prd')],
 });
 
 // Apply environment tag to a project
-const devProject = new CloudInfraServiceProject(projectMeta, {
+const devProject = new CloudInfraServiceProject('analytics-dev', {
   cloudInfraTags: [environmentTags.getTagValue('dev')],
   vpcHostProject: hostProject.getProjectId(),
 });
@@ -175,7 +167,7 @@ const outputManager = new CloudInfraOutput();
 environmentTags.exportOutputs(outputManager);
 
 // Use tag values in other resources
-const folder = new CloudInfraFolder(folderMeta, {
+const folder = new CloudInfraFolder('production', {
   cloudInfraTags: ['tagValues/1234567890'], // Reference to tag value ID
 });
 ```
@@ -190,7 +182,7 @@ To use tag values created by `CloudInfraTag`, you need to reference them by thei
 // Tag values are created as: tagValues/{generated-id}
 // You can reference them in other components that accept cloudInfraTags
 
-const folder = new CloudInfraFolder(folderMeta, {
+const folder = new CloudInfraFolder('production', {
   cloudInfraTags: [
     // Reference tag values by their resource IDs
     environmentTags.getTagValue('prd'), // If this method exists
@@ -222,13 +214,13 @@ The `values` array is required and must contain at least one value:
 
 ```ts
 // ✅ Correct
-const tag = new CloudInfraTag(meta, {
+const tag = new CloudInfraTag('environment', {
   description: 'Environment tag',
   values: [{ shortName: 'dev', description: 'Development' }],
 });
 
 // ❌ Will throw ValidationError
-const tag = new CloudInfraTag(meta, {
+const tag = new CloudInfraTag('environment', {
   description: 'Environment tag',
   values: [], // Empty array not allowed
 });
@@ -245,7 +237,7 @@ The component provides detailed error messages for common issues:
 
 ```ts
 try {
-  const tag = new CloudInfraTag(meta, config);
+  const tag = new CloudInfraTag('environment', config);
 } catch (error) {
   if (error instanceof ValidationError) {
     console.error('Configuration error:', error.message);

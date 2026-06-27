@@ -16,13 +16,10 @@
 ## Quick reference
 
 ```ts
-import {
-  CloudInfraMeta,
-  CloudInfraSecretVersion,
-} from '@mutinex/cloud-infra';
+import { CloudInfraSecretVersion } from '@mutinex/cloud-infra';
 ```
 
-Constructor – `new CloudInfraSecretVersion(meta, config?)`
+Constructor – `new CloudInfraSecretVersion(name, config?)`
 
 ---
 
@@ -34,22 +31,15 @@ The following examples are based on actual production secret management:
 
 ```ts
 import * as pulumi from '@pulumi/pulumi';
-import {
-  CloudInfraMeta,
-  CloudInfraSecretVersion,
-} from '@mutinex/cloud-infra';
+import { CloudInfraSecretVersion } from '@mutinex/cloud-infra';
 import { gcpProjectId, sqlConfig } from './config';
 
 // Master instance password secret for SQL database
-const masterInstancePasswordMeta = new CloudInfraMeta({
-  name: 'api-sql-master-pwd',
-  domain: 'au',
-  location: ['australia-southeast1', 'us-central1'],
-});
-
 export const masterInstancePassword = new CloudInfraSecretVersion(
-  masterInstancePasswordMeta,
+  'api-sql-master-pwd',
   {
+    domain: 'au',
+    location: ['australia-southeast1', 'us-central1'],
     project: gcpProjectId,
     secretData: sqlConfig.password,
   }
@@ -60,13 +50,9 @@ export const masterInstancePassword = new CloudInfraSecretVersion(
 
 ```ts
 // Database URI secret with interpolated connection string
-const apiDbUriMeta = new CloudInfraMeta({
-  name: 'api-sql-master-conn',
+export const apiDbUri = new CloudInfraSecretVersion('api-sql-master-conn', {
   domain: 'au',
   location: ['australia-southeast1', 'us-central1'],
-});
-
-export const apiDbUri = new CloudInfraSecretVersion(apiDbUriMeta, {
   project: gcpProjectId,
   secretData: pulumi.interpolate`postgres://${apiDbUser.getName()}:${apiDbUserPassword.result}@${masterSqlInstance.getInstance().privateIpAddress}/${apiDb.getDatabase().name}`,
 });
@@ -78,13 +64,9 @@ export const apiDbUri = new CloudInfraSecretVersion(apiDbUriMeta, {
 // Secret created only in specific environments
 export const masterInstancePassword = templateConfig.isStatic
   ? (() => {
-      const masterInstancePasswordMeta = new CloudInfraMeta({
-        name: 'api-sql-master-pwd',
+      return new CloudInfraSecretVersion('api-sql-master-pwd', {
         domain: 'au',
         location: ['australia-southeast1', 'us-central1'],
-      });
-
-      return new CloudInfraSecretVersion(masterInstancePasswordMeta, {
         project: gcpProjectId,
         secretData: sqlConfig.password,
       });
@@ -121,9 +103,8 @@ export const masterInstancePassword = templateConfig.isStatic
 ### 1. Regional secret
 
 ```ts
-const meta = new CloudInfraMeta({ name: 'db-root-pwd', domain: 'au' });
-
-new CloudInfraSecretVersion(meta, {
+new CloudInfraSecretVersion('db-root-pwd', {
+  domain: 'au',
   secretData: pulumi.secret('p@ssw0rd'),
 });
 ```
@@ -131,13 +112,9 @@ new CloudInfraSecretVersion(meta, {
 ### 2. Dual-region secret with labels
 
 ```ts
-const meta = new CloudInfraMeta({
-  name: 'jwt-secret',
+new CloudInfraSecretVersion('jwt-secret', {
   domain: 'us',
   location: ['us-central1', 'us-east1'],
-});
-
-new CloudInfraSecretVersion(meta, {
   secretData: 'super-secret-jwt-key',
   secret: { labels: { owner: 'my-team', env: 'dev' } },
 });
@@ -146,7 +123,9 @@ new CloudInfraSecretVersion(meta, {
 ### 3. Multi-regional secret with automatic replication
 
 ```ts
-new CloudInfraSecretVersion(meta, {
+new CloudInfraSecretVersion('jwt-secret', {
+  domain: 'us',
+  location: ['us-central1', 'us-east1'],
   secretData: 'top-secret',
   secret: {
     replication: { automatic: true }, // fully automatic replication

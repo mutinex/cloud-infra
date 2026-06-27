@@ -4,7 +4,7 @@ A high-level wrapper around `gcp.privilegedaccessmanager.Entitlement` that appli
 
 ## Features
 
-- **Name / ID generation** – `entitlementId` defaults to [`CloudInfraMeta.getName()`](../../core/meta/README.md).
+- **Name / ID generation** – `entitlementId` is derived from the name passed to the constructor (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
 - **Location defaulting** – `location` is set to `global` when the domain is `gl` (the default).
 - **Resource path normalisation** – relative paths like `/projects/my-proj` are automatically prefixed with `//cloudresourcemanager.googleapis.com/`.
 - **Resource-type mapping** – shorthand values (`"project"`, `"folder"`) expand to fully-qualified Cloud Resource Manager (CRM) type strings.
@@ -22,24 +22,19 @@ A high-level wrapper around `gcp.privilegedaccessmanager.Entitlement` that appli
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraEntitlement,
   CloudInfraRole,
 } from '@mutinex/cloud-infra';
 
-const roleMeta = new CloudInfraMeta({ name: 'support', omitDomain: true });
-const supportRole = new CloudInfraRole(roleMeta, {
+const supportRole = new CloudInfraRole('support', {
+  omitDomain: true,
   projectId: 'my-proj',
   title: 'Support',
   permissions: ['resourcemanager.projects.get'],
 });
 
-const entitlementMeta = new CloudInfraMeta({
-  name: 'support',
+const entitlement = new CloudInfraEntitlement('support', {
   omitDomain: true,
-});
-
-const entitlement = new CloudInfraEntitlement(entitlementMeta, {
   maxRequestDuration: '3600s',
   privilegedAccess: {
     gcpIamAccess: {
@@ -71,21 +66,16 @@ The following examples are based on actual usage patterns from production infras
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 import { orgIamPolicyAdmin } from './roles';
 import { orgDevId } from './refs';
 
-const orgDevIamPolicyAdminEntitlementMeta = new CloudInfraMeta({
-  name: 'org-dev-iam-policy-admin',
-  omitDomain: true,
-  omitPrefix: true,
-});
-
 export const orgDevIamPolicyAdminEntitlement = new CloudInfraEntitlement(
-  orgDevIamPolicyAdminEntitlementMeta,
+  'org-dev-iam-policy-admin',
   {
+    omitDomain: true,
+    omitPrefix: true,
     maxRequestDuration: '7200s',
     eligibleUsers: [
       {
@@ -114,21 +104,16 @@ export const orgDevIamPolicyAdminEntitlement = new CloudInfraEntitlement(
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 import { orgFolder } from './foldersTags';
 import { orgProjectAdmin } from './roles';
 
-const orgAdminEntitlementMeta = new CloudInfraMeta({
-  name: 'org-admin',
-  omitDomain: true,
-  omitPrefix: true,
-});
-
 export const orgAdminEntitlement = new CloudInfraEntitlement(
-  orgAdminEntitlementMeta,
+  'org-admin',
   {
+    omitDomain: true,
+    omitPrefix: true,
     maxRequestDuration: '7200s',
     eligibleUsers: [
       {
@@ -169,19 +154,14 @@ export const orgAdminEntitlement = new CloudInfraEntitlement(
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 
-const orgAdminDefaultEntitlementMeta = new CloudInfraMeta({
-  name: 'big-red-button',
-  omitDomain: true,
-  omitPrefix: true,
-});
-
 export const orgAdminDefaultEntitlement = new CloudInfraEntitlement(
-  orgAdminDefaultEntitlementMeta,
+  'big-red-button',
   {
+    omitDomain: true,
+    omitPrefix: true,
     maxRequestDuration: '7200s',
     eligibleUsers: [
       {
@@ -209,21 +189,16 @@ export const orgAdminDefaultEntitlement = new CloudInfraEntitlement(
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraEntitlement,
 } from '@mutinex/cloud-infra';
 import { parentFolder } from './foldersTags';
 import { orgIamPolicyAdmin } from './roles';
 
-const orgIamPolicyAdminEntitlementMeta = new CloudInfraMeta({
-  name: 'org-iam-policy-admin',
-  omitDomain: true,
-  omitPrefix: true,
-});
-
 export const orgIamPolicyAdminEntitlement = new CloudInfraEntitlement(
-  orgIamPolicyAdminEntitlementMeta,
+  'org-iam-policy-admin',
   {
+    omitDomain: true,
+    omitPrefix: true,
     maxRequestDuration: '3600s',
     eligibleUsers: [
       {
@@ -277,7 +252,7 @@ pulumi config set cloudInfra:organizationName "your-organization-name-here"
 
 | Field                           | Type     | Description                                                                                                 |
 | ------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| `entitlementId`                 | `string` | Unique identifier for the entitlement. Defaults to [`CloudInfraMeta.getName()`](../../core/meta/README.md). |
+| `entitlementId`                 | `string` | Unique identifier for the entitlement. Derived from the constructor name (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules). |
 | `location`                      | `string` | GCP location for the entitlement. Defaults to `global` when domain is `gl`.                                 |
 | `maxRequestDuration`            | `string` | Maximum duration for access requests (e.g., `"3600s"` for 1 hour).                                          |
 | `privilegedAccess`              | `object` | Configuration for the privileged access being granted.                                                      |

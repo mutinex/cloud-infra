@@ -19,7 +19,7 @@
 ## Quick reference
 
 ```ts
-import { CloudInfraMeta, CloudInfraRole } from '@mutinex/cloud-infra';
+import { CloudInfraRole } from '@mutinex/cloud-infra';
 ```
 
 ---
@@ -31,14 +31,10 @@ The following examples are based on actual production role management:
 ### 1. Organization Project Admin Role
 
 ```ts
-import { CloudInfraMeta, CloudInfraRole } from '@mutinex/cloud-infra';
+import { CloudInfraRole } from '@mutinex/cloud-infra';
 
-export const orgProjectAdminMeta = new CloudInfraMeta({
-  name: 'project-admin',
+export const orgProjectAdmin = new CloudInfraRole('project-admin', {
   omitDomain: true,
-});
-
-export const orgProjectAdmin = new CloudInfraRole(orgProjectAdminMeta, {
   orgId: 'YOUR_ORGANIZATION_ID',
   title: 'YourCompany Project Admin',
   description: 'YourCompany Project Admin',
@@ -75,12 +71,8 @@ export const orgProjectAdmin = new CloudInfraRole(orgProjectAdminMeta, {
 ### 2. Organization Viewer Role
 
 ```ts
-export const orgViewerMeta = new CloudInfraMeta({
-  name: 'viewer',
+export const orgViewer = new CloudInfraRole('viewer', {
   omitDomain: true,
-});
-
-export const orgViewer = new CloudInfraRole(orgViewerMeta, {
   orgId: 'YOUR_ORGANIZATION_ID',
   title: 'YourCompany Viewer',
   description: 'YourCompany Viewer',
@@ -111,12 +103,8 @@ export const orgViewer = new CloudInfraRole(orgViewerMeta, {
 ### 3. Specialized IAM Policy Admin Role
 
 ```ts
-export const orgIamPolicyAdminMeta = new CloudInfraMeta({
-  name: 'iam-policy-admin',
+export const orgIamPolicyAdmin = new CloudInfraRole('iam-policy-admin', {
   omitDomain: true,
-});
-
-export const orgIamPolicyAdmin = new CloudInfraRole(orgIamPolicyAdminMeta, {
   orgId: 'YOUR_ORGANIZATION_ID',
   title: 'YourCompany IAM Policy Admin',
   description: 'YourCompany IAM Policy Admin',
@@ -143,14 +131,10 @@ export const orgIamPolicyAdmin = new CloudInfraRole(orgIamPolicyAdminMeta, {
 ### 4. Organization Provisioner Role
 
 ```ts
-export const orgOrganizationProvisionerMeta = new CloudInfraMeta({
-  name: 'organization-provisioner',
-  omitDomain: true,
-});
-
 export const orgOrganizationProvisioner = new CloudInfraRole(
-  orgOrganizationProvisionerMeta,
+  'organization-provisioner',
   {
+    omitDomain: true,
     orgId: 'YOUR_ORGANIZATION_ID',
     title: 'YourCompany Organization Provisioner',
     description: 'YourCompany Organization Provisioner',
@@ -208,12 +192,8 @@ export const orgOrganizationProvisioner = new CloudInfraRole(
 ### 1. Project-level role inheriting built-in roles
 
 ```ts
-const meta = new CloudInfraMeta({
-  name: 'simple-folder-admin',
+export const folderAdmin = new CloudInfraRole('simple-folder-admin', {
   omitPrefix: true,
-});
-
-export const folderAdmin = new CloudInfraRole(meta, {
   title: 'Simple Folder Admin',
   roles: [
     'roles/resourcemanager.folderIamAdmin',
@@ -225,9 +205,8 @@ export const folderAdmin = new CloudInfraRole(meta, {
 ### 2. Role inheriting from another `CloudInfraRole`
 
 ```ts
-const meta = new CloudInfraMeta({ name: 'extended-invoker', omitPrefix: true });
-
-export const extendedInvoker = new CloudInfraRole(meta, {
+export const extendedInvoker = new CloudInfraRole('extended-invoker', {
+  omitPrefix: true,
   projectId: pulumi.getProject(),
   title: 'Pub/Sub + Run Invoker',
   roles: [folderAdmin], // inherits perms from example 1
