@@ -8,7 +8,11 @@ import { ValidationError } from '../../core/errors';
 
 // Helpers - import as needed
 import { deriveRegion } from '../../core/helpers';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Secret Manager secret+version component. */
 export const SECRET_VERSION_TYPE = 'cloud-infra:secret:SecretVersion';
@@ -31,6 +35,19 @@ export type CloudInfraSecretVersionConfig = {
     location?: pulumi.Input<string>; // Optional: user can override meta's location (regional only)
   };
 };
+
+/**
+ * Name-first construction args for `CloudInfraSecretVersion` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the secret-version config
+ * ({@link CloudInfraSecretVersionConfig}) into a single args object. The naming
+ * fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the config.
+ */
+export type CloudInfraSecretVersionArgs = NamingArgs &
+  CloudInfraSecretVersionConfig;
 
 /*********************************************************************************************
  * The main CloudInfraSecretVersion component
@@ -60,11 +77,47 @@ export class CloudInfraSecretVersion extends CloudInfraComponent {
     | gcp.secretmanager.SecretVersion
     | gcp.secretmanager.RegionalSecretVersion;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the secret-version config
+   * are folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args: CloudInfraSecretVersionArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraSecretVersion(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraSecretVersionConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraSecretVersionArgs | CloudInfraSecretVersionConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // secret-version config passed straight through.
+    let meta: CloudInfraMeta;
+    let config: CloudInfraSecretVersionConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraSecretVersionArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraSecretVersionConfig;
+    }
+
     const resourceName = meta.getName();
 
     super(
