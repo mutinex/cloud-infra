@@ -39,6 +39,15 @@ const svc = new CloudInfraServiceProject('analytics-dev', {
 });
 ```
 
+> **Construction:** both components are **name-first** (v2 DX):
+> `new CloudInfraHostProject(name, args, opts?)` /
+> `new CloudInfraServiceProject(name, args, opts?)`. Naming metadata
+> (`domain` / `location` / `prefix` / `naming` —
+> `'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }`) is
+> folded into `args` alongside the project config. A meta-first overload
+> (`new CloudInfraHostProject(meta, config, opts?)`) is retained for backward
+> compatibility but is **`@deprecated`**; it produces identical resources.
+
 ---
 
 ## Configuration
@@ -207,6 +216,23 @@ export const orgProject = new CloudInfraServiceProject(sharedProjectName, {
 | `getSharedVpcSelfLink()` | ✅   | —       | Network self-link.                         |
 | `getEnabledServices()`   | ✅   | ✅      | Array of `gcp.projects.Service` resources. |
 | `exportOutputs()`        | ✅   | ✅      | Writes to `CloudInfraOutput`.              |
+
+---
+
+## Outputs
+
+Both components expose `exportOutputs(manager)` to record the project with a [`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+host.exportOutputs(out);
+svc.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); // legacy nested wire
+```
 
 ---
 
