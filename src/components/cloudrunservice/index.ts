@@ -36,9 +36,16 @@ export type CloudInfraCloudRunServiceConfig = Omit<
  * `generateName` output, Frozen Contract F1); the remaining fields are passed
  * straight through as the service config — both the Service and its NEG derive
  * their names/opts from the meta + config exactly as the meta-first path.
+ *
+ * `location` is intentionally `Omit`ted from the config arm (mirroring the
+ * bucket proof, which Omits `project`/`location`): on the name-first surface the
+ * single {@link NamingArgs.location} drives BOTH the generated name AND the
+ * Service deployment region (via `deriveRegion(meta)`), so there is no separate,
+ * ambiguous `config.location`. Meta-first callers keep the legacy
+ * `config.location` override on {@link CloudInfraCloudRunServiceConfig}.
  */
 export type CloudInfraCloudRunServiceArgs = NamingArgs &
-  CloudInfraCloudRunServiceConfig;
+  Omit<CloudInfraCloudRunServiceConfig, 'location'>;
 
 /** Pulumi type token for the Cloud Run service component. */
 export const CLOUD_RUN_SERVICE_TYPE =
