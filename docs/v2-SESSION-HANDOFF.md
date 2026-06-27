@@ -134,3 +134,16 @@ to `main` or applies without it. Provider-drift caveat: pin gcp provider for the
    (CI gate) where it doesn't touch the base.
 3. Each: work cycle → Tech-Lead verify → user merge gate → merge to `v2`. Update this doc's §4/§6
    when a workstream merges.
+
+---
+
+## Progress Log (live — most recent first; appended by Tech Lead)
+
+**v2 @ 3ec1a1e.**
+
+- **MERGED to v2:** Phase 1 — full Frozen-Contract golden net (F1 names, F2 aliases + 12 ALB tokens, F3 IAM-name formula + truncation, F4 getIdentifier); base redesign (per-child arg-merged labels — kills transitive-inheritance gotcha; alias recipe in base via `childOpts`/`nestedChildOpts`), zero-replace verified on dataos/dev + gcp-org mtx/dev + mtx-org/prd. Plus **DX1a** name-first foundation: `resolveMeta` + `NamingArgs`/`NamingMode` (5-formula mapping) in `src/core/component/naming.ts` + Bucket proof + equivalence tests. **416 tests green.**
+- **IN FLIGHT:** DX3 (reference `get(name).field` + domain-optional merge of ReferenceWithoutDomain; refining default to cross-type scan); DX1-sweep-1 (name-first overload for simple singles: account, repository, secret, cloudrunjob, role, database*, wip); DX1-sweep-2 (name-first for multi-resource: cloudrunservice, backendservice, nat, psa, connector, subnet). All add-new-overload + keep meta-first `@deprecated`; golden net is the guard.
+- **QUEUED:** DX1 heavy sweep (alb; project host/service; certificatemap; **instance — zonal is a 6th naming surface, needs a zonal mode + the `<region>-a` default pinned**); DX2 (kill single/bulk — account-bulk, bucket-bulk; bulk feeding access-matrix embeds the map key, Trap #6); DX4 (flat self-describing outputs + dual-emit for compat, keep getIdentifier F4); Phase 3 (internal simplification: collapse access-matrix registry/builder/handler indirection, delete dead `Config` singleton + LRU + dead code, dep cleanup [`ts-pattern` unused; `prettier`/`tsup`/`@swc` mis-placed], docs/test sprawl); WS-D (CI zero-replace preview gate — deferred).
+- **Merge authority:** Tech Lead merges into `v2` on clean gates (build/tsc/test + golden net + reviewers + zero-replace preview for structural changes). **Applying to real infra / publishing the package = explicit user decision** — everything is PREVIEW-ONLY so far.
+- **Drop-resilience lesson:** big single-agent workstreams hit ~18-min connection drops and lost uncommitted work twice (DX1) → chunk into small per-component-committing runs.
+- **Worktrees:** `cloud-infra-wt-v2trunk` = integrator (on `v2`). Active: `-dx3`, `-sweep1`, `-sweep2`. Prunable (merged/stale): `-ws-golden`, `-ws-net2`, `-ws-ab`, `-dx1`, `-g1`..`-g5`, `-org-project`, `-org-rest`, `-canary`, `-v2`.
