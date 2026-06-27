@@ -17,8 +17,8 @@ import {
 // `core/policy-rule-processor.ts`) and feeds IAM resource naming (v2 redesign
 // notes §3 Trap 2). The previous instance-level `extractResourceInfo` and
 // `createIamBinding` methods (plus their private getters) were dead code: the
-// live path calls `IamBuilderRegistry.createIamBinding` directly, and
-// `extractResourceInfo` was only referenced from tests. They were removed in the
+// live path calls the `createIamBinding` switch in `builders/iam-binding.ts`
+// directly, and `extractResourceInfo` was only referenced from tests. They were removed in the
 // Phase 3 dead-code excision. Do NOT delete `supportedType` or the registrations.
 
 /**

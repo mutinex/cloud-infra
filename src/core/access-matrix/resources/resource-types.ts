@@ -5,9 +5,9 @@
  * `ResourceRegistry.getHandler(resource).supportedType` and feeds IAM naming
  * (v2 redesign notes §3 Trap 2). The former `extractResourceInfo`/
  * `createIamBinding` members (and their generic `T`/`R` params) were dead — the
- * live path uses `IamBuilderRegistry.createIamBinding` directly — and were
- * removed in the Phase 3 dead-code excision. The per-resource `*ResourceInfo`
- * shapes remain live: they are used by the IAM builders (`builders/*-builder.ts`).
+ * live path uses the `createIamBinding` switch in `builders/iam-binding.ts`
+ * directly — and were removed in the Phase 3 dead-code excision. The per-resource
+ * `*ResourceInfo` shapes remain live: they are used by `builders/iam-binding.ts`.
  */
 export interface ResourceHandler {
   readonly supportedType: string;
