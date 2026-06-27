@@ -1,3 +1,4 @@
+import * as pulumi from '@pulumi/pulumi';
 import * as gcp from '@pulumi/gcp';
 import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
@@ -40,6 +41,9 @@ import {
  * const apiSa = accounts.getAccount("primary");
  * ```
  */
+/** Pulumi type token for the bulk service-account component. */
+export const BULK_ACCOUNT_TYPE = 'cloud-infra:account:CloudInfraBulkAccount';
+
 export class CloudInfraBulkAccount extends CloudInfraAccountBase {
   private meta: CloudInfraMeta;
   private accounts: Record<string, gcp.serviceaccount.Account> = {};
@@ -55,9 +59,26 @@ export class CloudInfraBulkAccount extends CloudInfraAccountBase {
     meta: CloudInfraMeta,
     config?: CloudInfraAccountConfig & {
       custom?: Record<string, CloudInfraAccountConfig>;
-    }
+    },
+    opts?: pulumi.ComponentResourceOptions
   ) {
-    super();
+    // BulkAccount wraps MANY service accounts, so there is no single primary
+    // generated name to use as the component node label. Use a STABLE label
+    // derived from the (order-preserving) input names. Each child SA below
+    // keeps its OWN exact generated name as its first arg (F1) — the component
+    // node label has no effect on child URNs (children alias back to root).
+    const inputNames = meta.getInputName();
+    const componentLabel = (
+      Array.isArray(inputNames) ? inputNames.join('-') : inputNames
+    ).concat('-accounts');
+
+    super(
+      BULK_ACCOUNT_TYPE,
+      componentLabel,
+      componentLabel,
+      { domain: meta.getDomain() },
+      opts
+    );
 
     CloudInfraLogger.info('Initializing bulk service account component', {
       component: 'account',
@@ -80,11 +101,19 @@ export class CloudInfraBulkAccount extends CloudInfraAccountBase {
       // Merge common + per-account Pulumi arguments (per-account takes precedence)
       const rawConfig = { ...commonConfig, ...perAccountRaw };
 
+      // Each SA moves UNDER this component but was created FLAT at the stack
+      // root in v1 → per-item alias back to its old root-level URN for a
+      // non-destructive migration. `gcp.serviceaccount.Account` has NO `labels`
+      // field, so we pass plain parent opts (NOT label-stamping `childOpts()`).
       const { account, parsedConfig } = createGcpServiceAccount({
         meta,
         rawConfig,
         inputName,
         pulumiResourceName: generatedName,
+        opts: {
+          parent: this,
+          aliases: [{ parent: pulumi.rootStackResource }],
+        },
       });
 
       this.accounts[inputName] = account;
@@ -92,6 +121,10 @@ export class CloudInfraBulkAccount extends CloudInfraAccountBase {
 
       this.addAccount(inputName, account);
     }
+
+    this.registerOutputs({
+      serviceAccounts: this.accounts,
+    });
   }
 
   /**

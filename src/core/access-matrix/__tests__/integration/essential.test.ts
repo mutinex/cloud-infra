@@ -34,7 +34,16 @@ vi.mock('@pulumi/pulumi', () => ({
     }),
   })),
   CustomResource: vi.fn(),
-  output: vi.fn((value) => ({ 
+  // v2 wrapper components (e.g. CloudInfraRole, imported transitively by the
+  // access-matrix) extend `pulumi.ComponentResource`. The mock must expose it
+  // or the class declaration fails to evaluate at module load. A no-op stub is
+  // sufficient — these tests never instantiate the wrappers.
+  ComponentResource: class {
+    constructor() {}
+    registerOutputs() {}
+  },
+  rootStackResource: undefined,
+  output: vi.fn((value) => ({
     apply: vi.fn((fn) => fn(value)), 
     __isOutput: true,
     isSecret: false,

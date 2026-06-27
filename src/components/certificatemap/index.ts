@@ -11,6 +11,7 @@ import { CloudInfraOutput } from '../../core/output';
 import { ResourceError, ValidationError } from '../../core/errors';
 import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
 import { Config } from '../../config';
 import { CloudInfraCertificateMapConfig, CertificateDefinition } from './types';
 
@@ -40,7 +41,27 @@ type CertificateMapEntryMap = Record<
  * - Use getCertificateMap() for global load balancers with certificate maps
  * - Use getManagedCertificate() for certificateManagerCertificates in any load balancer
  */
-export class CloudInfraCertificateMap {
+/** Pulumi type token for the certificate-map component. */
+export const CERTIFICATE_MAP_TYPE =
+  'cloud-infra:certificatemap:CloudInfraCertificateMap';
+
+/**
+ * Resolves and validates the single component name before `this` exists (so it
+ * can feed `super()`). Throws the component's ValidationError on array names.
+ */
+function resolveCertificateMapName(meta: CloudInfraMeta): string {
+  const candidateInputName = meta.getInputName();
+  if (Array.isArray(candidateInputName)) {
+    throw new ValidationError(
+      'CloudInfraCertificateMap expects a single name. Use separate Certificate components per certificate.',
+      'certificatemap',
+      'validateAndGetInputName'
+    );
+  }
+  return meta.getName();
+}
+
+export class CloudInfraCertificateMap extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly config: CloudInfraCertificateMapConfig;
   private readonly inputName: string;
@@ -55,7 +76,24 @@ export class CloudInfraCertificateMap {
   private certificateMap?: gcp.certificatemanager.CertificateMap;
   private readonly certificateMapEntries: CertificateMapEntryMap = {};
 
-  constructor(meta: CloudInfraMeta, config: CloudInfraCertificateMapConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraCertificateMapConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    // Validate + resolve the generated NAME (unchanged, F1) before super. The
+    // child suffix conventions (`-domain`/`-cert.name`/`-hostname`, sanitized)
+    // are preserved verbatim further down (F2).
+    const resourceName = resolveCertificateMapName(meta);
+
+    super(
+      CERTIFICATE_MAP_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     try {
       CloudInfraLogger.info('Initializing certificate map component', {
         component: 'certificatemap',
@@ -68,11 +106,15 @@ export class CloudInfraCertificateMap {
       // Initialize properties
       this.isGlobal = this.isGlobalDomain();
       this.location = this.determineLocation();
-      this.inputName = this.validateAndGetInputName();
-      this.resourceName = meta.getName();
+      this.inputName = meta.getInputName() as string;
+      this.resourceName = resourceName;
 
       // Create resources after initialization
       this.createManagedCertificateResources();
+
+      this.registerOutputs({
+        certificateMap: this.certificateMap,
+      });
     } catch (err) {
       throw new ResourceError(
         `Failed to create certificate ${meta.getName()}: ${err}`,
@@ -80,22 +122,6 @@ export class CloudInfraCertificateMap {
         'constructor'
       );
     }
-  }
-
-  /**
-   * Validates input name and returns it if valid
-   * @throws {ValidationError} if input name is an array
-   */
-  private validateAndGetInputName(): string {
-    const candidateInputName = this.meta.getInputName();
-    if (Array.isArray(candidateInputName)) {
-      throw new ValidationError(
-        'CloudInfraCertificateMap expects a single name. Use separate Certificate components per certificate.',
-        'certificatemap',
-        'validateAndGetInputName'
-      );
-    }
-    return candidateInputName;
   }
 
   /**
@@ -196,12 +222,16 @@ export class CloudInfraCertificateMap {
       ...this.getLocationConfig(),
     };
 
+    // certificatemanager.DnsAuthorization HAS a `labels` input → stamp the org
+    // label floor via childOpts(). FLAT (root) in v1 → alias back to its old
+    // root URN. PRESERVE the existing deleteBeforeReplace.
     return new gcp.certificatemanager.DnsAuthorization(
       authorizationName,
       authorizationArgs,
-      {
+      this.childOpts({
         deleteBeforeReplace: true,
-      }
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
     );
   }
 
@@ -230,18 +260,28 @@ export class CloudInfraCertificateMap {
   ): cloudflare.Record {
     const recordName = `${this.resourceName}-${this.sanitizeResourceName(domain)}`;
 
-    return new cloudflare.DnsRecord(recordName, {
-      zoneId: this.config.cloudflareZoneId,
-      name: authorization.dnsResourceRecords.apply(
-        records => records[0]?.name ?? ''
-      ),
-      type: 'CNAME',
-      content: authorization.dnsResourceRecords.apply(
-        records => records[0]?.data ?? ''
-      ),
-      ttl: 1, // Minimum TTL for validation records
-      proxied: false,
-    });
+    // cloudflare.DnsRecord has NO `labels` input → use PLAIN parent opts (NOT
+    // childOpts(), which would inject an unsupported `labels` key and hard-error).
+    // FLAT (root) in v1 → alias back to its old root URN.
+    return new cloudflare.DnsRecord(
+      recordName,
+      {
+        zoneId: this.config.cloudflareZoneId,
+        name: authorization.dnsResourceRecords.apply(
+          records => records[0]?.name ?? ''
+        ),
+        type: 'CNAME',
+        content: authorization.dnsResourceRecords.apply(
+          records => records[0]?.data ?? ''
+        ),
+        ttl: 1, // Minimum TTL for validation records
+        proxied: false,
+      },
+      {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
+    );
   }
 
   /**
@@ -280,9 +320,15 @@ export class CloudInfraCertificateMap {
       ...this.getLocationConfig(),
     };
 
+    // certificatemanager.Certificate HAS a `labels` input → stamp via childOpts.
+    // FLAT (root) in v1 → alias back to its old root URN. Child name suffix
+    // `-${cert.name}` preserved verbatim (F2).
     return new gcp.certificatemanager.Certificate(
       `${this.resourceName}-${cert.name}`,
-      certificateArgs
+      certificateArgs,
+      this.childOpts({
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
     );
   }
 
@@ -313,14 +359,18 @@ export class CloudInfraCertificateMap {
       operation: 'createCertificateMap',
     });
 
+    // certificatemanager.CertificateMap HAS a `labels` input → stamp via
+    // childOpts. FLAT (root) in v1 → alias back to its old root URN. PRESERVE
+    // the existing deleteBeforeReplace.
     this.certificateMap = new gcp.certificatemanager.CertificateMap(
       this.resourceName,
       {
         project: this.config.project ?? this.meta.getGcpProject(),
       },
-      {
+      this.childOpts({
         deleteBeforeReplace: true,
-      }
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
     );
   }
 
@@ -370,6 +420,10 @@ export class CloudInfraCertificateMap {
 
     const entryName = `${this.resourceName}-${this.sanitizeResourceName(hostname)}`;
 
+    // certificatemanager.CertificateMapEntry HAS a `labels` input → stamp via
+    // childOpts. FLAT (root) in v1 → alias back to its old root URN. PRESERVE
+    // the existing dependsOn. Child name suffix `-${hostname}` (sanitized)
+    // preserved verbatim (F2).
     const entry = new gcp.certificatemanager.CertificateMapEntry(
       entryName,
       {
@@ -378,9 +432,10 @@ export class CloudInfraCertificateMap {
         hostname: hostname,
         project: this.config.project ?? this.meta.getGcpProject(),
       },
-      {
+      this.childOpts({
         dependsOn: [certificate, this.certificateMap],
-      }
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
     );
 
     this.certificateMapEntries[hostname] = entry;

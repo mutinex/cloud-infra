@@ -32,6 +32,13 @@ interface CreateGlobalUrlMapParams {
   config: gcp.compute.URLMapArgs;
   /** The name of the resource */
   resourceName: string;
+  /**
+   * Optional Pulumi resource options threaded from the ALB component so the
+   * URL map is parented under the component (with a root-stack alias). URLMap
+   * has NO `labels` field, so the component passes PLAIN opts here (no label
+   * transformation). Omitted in direct/unit usage.
+   */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -48,6 +55,8 @@ interface CreateRegionalUrlMapParams {
   region: string;
   /** The load balancing scheme for the URL map (required for internal load balancers) */
   loadBalancingScheme?: 'EXTERNAL_MANAGED' | 'INTERNAL_MANAGED';
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -68,6 +77,8 @@ export interface ResolveUrlMapParams {
   region?: string;
   /** The load balancing scheme for the URL map (required for internal load balancers) */
   loadBalancingScheme?: 'EXTERNAL_MANAGED' | 'INTERNAL_MANAGED';
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -123,14 +134,18 @@ export function createGlobalUrlMap(params: CreateGlobalUrlMapParams): {
   urlMap: gcp.compute.URLMap;
 } {
   return withErrorHandling('global URL map', params.resourceName, () => {
-    const { config, resourceName, meta } = params;
+    const { config, resourceName, meta, opts } = params;
 
     const urlMapArgs: gcp.compute.URLMapArgs = {
       ...config, // User config first
       project: config.project ?? meta.getGcpProject(),
     };
 
-    const urlMap = new gcp.compute.URLMap(resourceName, urlMapArgs);
+    const urlMap = new gcp.compute.URLMap(
+      resourceName,
+      urlMapArgs,
+      ...(opts ? [opts] : [])
+    );
     return { urlMap };
   });
 }
@@ -151,7 +166,8 @@ export function createRegionalUrlMap(params: CreateRegionalUrlMapParams): {
   urlMap: gcp.compute.RegionUrlMap;
 } {
   return withErrorHandling('regional URL map', params.resourceName, () => {
-    const { config, resourceName, region, meta, loadBalancingScheme } = params;
+    const { config, resourceName, region, meta, loadBalancingScheme, opts } =
+      params;
 
     const urlMapArgs: gcp.compute.RegionUrlMapArgs = {
       ...config, // User config first
@@ -168,7 +184,11 @@ export function createRegionalUrlMap(params: CreateRegionalUrlMapParams): {
       // the scheme from the associated components.
     }
 
-    const urlMap = new gcp.compute.RegionUrlMap(resourceName, urlMapArgs);
+    const urlMap = new gcp.compute.RegionUrlMap(
+      resourceName,
+      urlMapArgs,
+      ...(opts ? [opts] : [])
+    );
     return { urlMap };
   });
 }
@@ -209,13 +229,14 @@ function resolveUrlMapCommon(
 export function resolveGlobalUrlMap(
   params: ResolveUrlMapParams
 ): ResolveUrlMapResult {
-  const { input, meta, resourceName } = params;
+  const { input, meta, resourceName, opts } = params;
 
   return resolveUrlMapCommon(params, () =>
     createGlobalUrlMap({
       meta,
       config: input as gcp.compute.URLMapArgs,
       resourceName,
+      opts,
     })
   );
 }
@@ -234,7 +255,8 @@ export function resolveGlobalUrlMap(
 export function resolveRegionalUrlMap(
   params: ResolveUrlMapParams
 ): ResolveUrlMapResult {
-  const { input, meta, resourceName, region, loadBalancingScheme } = params;
+  const { input, meta, resourceName, region, loadBalancingScheme, opts } =
+    params;
 
   if (!region) {
     throw new ValidationError(
@@ -251,6 +273,7 @@ export function resolveRegionalUrlMap(
       resourceName,
       region,
       loadBalancingScheme,
+      opts,
     })
   );
 }

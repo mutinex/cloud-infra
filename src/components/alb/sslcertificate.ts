@@ -1,4 +1,5 @@
 import * as gcp from '@pulumi/gcp';
+import * as pulumi from '@pulumi/pulumi';
 import { z } from 'zod';
 
 import { CloudInfraMeta } from '../../core/meta';
@@ -34,6 +35,13 @@ interface CreateSslCertificateParams {
   config: gcp.compute.SSLCertificateArgs;
   /** The name of the resource */
   resourceName: string;
+  /**
+   * Optional Pulumi resource options threaded from the ALB component so the
+   * certificate is parented under the component (with a root-stack alias).
+   * SSLCertificate has NO `labels` field, so the component passes PLAIN opts
+   * here (no label transformation). Omitted in direct/unit usage.
+   */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -48,6 +56,8 @@ interface CreateRegionalSslCertificateParams {
   resourceName: string;
   /** The GCP region where the certificate will be created */
   region: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -63,6 +73,8 @@ export interface CreateCertificateParams {
   resourceName: string;
   /** The GCP region (required for regional certificates) */
   region?: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -148,14 +160,18 @@ export function createSslCertificate(params: CreateSslCertificateParams): {
   certificate: gcp.compute.SSLCertificate;
 } {
   return withErrorHandling('SSL certificate', params.resourceName, () => {
-    const { config, resourceName, meta } = params;
+    const { config, resourceName, meta, opts } = params;
 
     const sslArgs: gcp.compute.SSLCertificateArgs = {
       ...config, // User config first
       project: config.project ?? meta.getGcpProject(),
     };
 
-    const certificate = new gcp.compute.SSLCertificate(resourceName, sslArgs);
+    const certificate = new gcp.compute.SSLCertificate(
+      resourceName,
+      sslArgs,
+      ...(opts ? [opts] : [])
+    );
 
     return { certificate };
   });
@@ -194,7 +210,7 @@ export function createRegionalSslCertificate(
     'regional SSL certificate',
     params.resourceName,
     () => {
-      const { config, resourceName, region, meta } = params;
+      const { config, resourceName, region, meta, opts } = params;
 
       const sslArgs: gcp.compute.RegionSslCertificateArgs = {
         ...config, // User config first
@@ -204,7 +220,8 @@ export function createRegionalSslCertificate(
 
       const certificate = new gcp.compute.RegionSslCertificate(
         resourceName,
-        sslArgs
+        sslArgs,
+        ...(opts ? [opts] : [])
       );
 
       return { certificate };
@@ -225,7 +242,7 @@ export function createRegionalSslCertificate(
 export function createCertificate(
   params: CreateCertificateParams
 ): CreateCertificateResult {
-  const { config, meta, resourceName, region } = params;
+  const { config, meta, resourceName, region, opts } = params;
 
   if (region) {
     const regionalConfig = config as gcp.compute.RegionSslCertificateArgs;
@@ -234,6 +251,7 @@ export function createCertificate(
       config: regionalConfig,
       resourceName,
       region,
+      opts,
     });
     return { certificate };
   } else {
@@ -242,6 +260,7 @@ export function createCertificate(
       meta,
       config: globalConfig,
       resourceName,
+      opts,
     });
     return { certificate };
   }

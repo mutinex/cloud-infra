@@ -6,6 +6,7 @@ import { CloudInfraOutput } from '../../core/output';
 import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
 
 /**
  * Configuration for Compute Instance component.
@@ -18,6 +19,9 @@ export type CloudInfraComputeInstanceConfig = Omit<
   zone?: pulumi.Input<string>;
   project?: pulumi.Input<string>;
 };
+
+/** Pulumi type token for the Compute Instance component. */
+export const COMPUTE_INSTANCE_TYPE = 'cloud-infra:instance:ComputeInstance';
 
 /**
  * **Compute Instance** component.
@@ -43,11 +47,51 @@ export type CloudInfraComputeInstanceConfig = Omit<
  * });
  * ```
  */
-export class CloudInfraComputeInstance {
+export class CloudInfraComputeInstance extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   public readonly instance: gcp.compute.Instance;
 
-  constructor(meta: CloudInfraMeta, config: CloudInfraComputeInstanceConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraComputeInstanceConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    // Determine the zone to use - prefer explicit config.zone, then meta zone,
+    // then default. This zonal-name logic (with the implicit `-a` zone default)
+    // is preserved EXACTLY from v1 — it drives the generated NAME (F1), which
+    // must stay byte-identical. Computed before `super()` because the resolved
+    // name is the component's logical name and the child's name.
+    let zone: pulumi.Input<string>;
+    let resourceName: string;
+
+    if (config.zone) {
+      // Explicit zone provided in config
+      zone = config.zone;
+      resourceName =
+        typeof config.zone === 'string'
+          ? meta.getName(config.zone)
+          : meta.getName();
+    } else if (meta.isLocationZone()) {
+      // Meta has a zone configured
+      zone = meta.getZone();
+      resourceName = meta.getName(zone);
+    } else {
+      // Fall back to region + default zone suffix
+      const defaultZone = `${deriveRegion(meta)}-a`;
+      zone = defaultZone;
+      resourceName = meta.getName(defaultZone);
+    }
+
+    // Register the component node. The Instance child parents under `this` and
+    // inherits the label-stamping transformation.
+    super(
+      COMPUTE_INSTANCE_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing Compute Instance component', {
       component: 'compute-instance',
       operation: 'constructor',
@@ -78,28 +122,6 @@ export class CloudInfraComputeInstance {
       );
     }
 
-    // Determine the zone to use - prefer explicit config.zone, then meta zone, then default
-    let zone: pulumi.Input<string>;
-    let resourceName: string;
-
-    if (config.zone) {
-      // Explicit zone provided in config
-      zone = config.zone;
-      resourceName =
-        typeof config.zone === 'string'
-          ? meta.getName(config.zone)
-          : meta.getName();
-    } else if (meta.isLocationZone()) {
-      // Meta has a zone configured
-      zone = meta.getZone();
-      resourceName = meta.getName(zone);
-    } else {
-      // Fall back to region + default zone suffix
-      const defaultZone = `${deriveRegion(meta)}-a`;
-      zone = defaultZone;
-      resourceName = meta.getName(defaultZone);
-    }
-
     const instanceArgs: gcp.compute.InstanceArgs = {
       ...config,
       name: resourceName,
@@ -107,7 +129,21 @@ export class CloudInfraComputeInstance {
       zone,
     };
 
-    this.instance = new gcp.compute.Instance(resourceName, instanceArgs);
+    // v1 created the Instance FLAT (no parent, at the stack root). It now moves
+    // UNDER this component; alias it back to its old root-level URN so it
+    // updates in place rather than being replaced. gcp.compute.Instance
+    // supports `labels`, so use childOpts() (label stamping applies).
+    this.instance = new gcp.compute.Instance(
+      resourceName,
+      instanceArgs,
+      this.childOpts({
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
+    );
+
+    this.registerOutputs({
+      instance: this.instance,
+    });
   }
 
   /** Underlying Compute Instance resource. */

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { CloudInfraMeta, gcpServiceAccountNameSchema } from '../../core/meta';
 import { ValidationError, ResourceError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
 
 /**
  * Shared helpers, configuration types and validation schemas for CloudInfra
@@ -36,8 +37,17 @@ export interface ICloudInfraAccountMembership {
 /**
  * Base class that provides the common account membership properties
  * implementation to eliminate duplication between account classes.
+ *
+ * v2: now a {@link pulumi.ComponentResource} (via {@link CloudInfraComponent}).
+ * The concrete `CloudInfraAccount` / `CloudInfraBulkAccount` subclasses register
+ * a component node and parent their service-account child(ren) under it. The
+ * public membership surface (`emails`/`ids`/`names`/`members`/`serviceAccounts`)
+ * is UNCHANGED — the access-matrix consumes accounts as principals via
+ * `getEmail()`/`getAccounts()`, whose returned `Output` values are identical
+ * (they still read straight off the underlying `gcp.serviceaccount.Account`).
  */
 export abstract class CloudInfraAccountBase
+  extends CloudInfraComponent
   implements ICloudInfraAccountMembership
 {
   readonly emails: Record<string, pulumi.Output<string>> = {};
@@ -91,6 +101,18 @@ export interface CreateCloudInfraAccountParams {
   inputName: string;
   /** Name used for the Pulumi resource URN – must be unique in the stack. */
   pulumiResourceName: string;
+  /**
+   * Resource options for the underlying `gcp.serviceaccount.Account`.
+   *
+   * v2 components pass `{ parent: <component>, aliases: [...] }` so the SA is
+   * created as a child of the ComponentResource while aliasing back to its
+   * old flat (root-level) URN for a non-destructive migration.
+   *
+   * NB: `gcp.serviceaccount.Account` has NO `labels` input, so the org label
+   * floor is intentionally NOT stamped here (callers therefore pass plain
+   * `{ parent, ... }` rather than the label-stamping `childOpts()`).
+   */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -111,7 +133,7 @@ export function createGcpServiceAccount(
   /** The validated configuration used to create the resource. */
   parsedConfig: CloudInfraAccountPulumiConfig;
 } {
-  const { meta, rawConfig, inputName, pulumiResourceName } = params;
+  const { meta, rawConfig, inputName, pulumiResourceName, opts } = params;
 
   CloudInfraLogger.info('Creating GCP service account', {
     component: 'account',
@@ -150,7 +172,8 @@ export function createGcpServiceAccount(
 
   const account = new gcp.serviceaccount.Account(
     pulumiResourceName,
-    accountArgs
+    accountArgs,
+    opts
   );
 
   const parsedConfig: CloudInfraAccountPulumiConfig = accountArgs;

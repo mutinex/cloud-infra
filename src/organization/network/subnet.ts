@@ -5,6 +5,7 @@ import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
 
 /**
  * @module
@@ -13,9 +14,25 @@ import { CloudInfraLogger } from '../../core/logging';
  * that adheres to CloudInfra naming conventions.
  */
 
+/** Pulumi type token for the Subnet component. */
+export const SUBNET_TYPE = 'cloud-infra:network:CloudInfraSubnet';
+
 /**
  * Creates a Google Cloud subnetwork with a name and region derived from
  * `CloudInfraMeta`.
+ *
+ * This component is now a {@link pulumi.ComponentResource} (via
+ * {@link CloudInfraComponent}): the Subnetwork is created as a *child* of the
+ * component so it appears under one logical node. The child carries an `alias`
+ * back to its old root-level URN so an existing v1 deployment migrates
+ * IN-PLACE (no destroy/recreate) — the generated NAME is kept byte-identical
+ * (Frozen Contract F1) and only the URN parent path changes.
+ *
+ * NOTE: `gcp.compute.Subnetwork` has NO `labels` field, so the child is
+ * parented WITHOUT label stamping (plain `{ parent: this, ... }`).
+ *
+ * The public surface is UNCHANGED from v1: same `constructor(meta, config)`
+ * signature and the same getters.
  *
  * @example
  * ```typescript
@@ -30,7 +47,7 @@ import { CloudInfraLogger } from '../../core/logging';
  * });
  * ```
  */
-export class CloudInfraSubnet {
+export class CloudInfraSubnet extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly config: gcp.compute.SubnetworkArgs;
   private readonly subnet: gcp.compute.Subnetwork;
@@ -48,8 +65,12 @@ export class CloudInfraSubnet {
   constructor(
     meta: CloudInfraMeta,
     config: gcp.compute.SubnetworkArgs,
-    opts?: pulumi.ResourceOptions
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceName = meta.getName();
+
+    super(SUBNET_TYPE, resourceName, resourceName, { domain: meta.getDomain() }, opts);
+
     CloudInfraLogger.info('Initializing subnet component', {
       component: 'network-subnet',
       operation: 'constructor',
@@ -69,22 +90,37 @@ export class CloudInfraSubnet {
       );
     }
     this.inputName = candidateInputName;
-    this.resourceName = meta.getName();
+    this.resourceName = resourceName;
 
-    this.subnet = this.createSubnet(this.config, opts);
+    this.subnet = this.createSubnet(this.config);
+
+    this.registerOutputs({
+      subnet: this.subnet,
+    });
   }
 
   private createSubnet(
-    config: gcp.compute.SubnetworkArgs,
-    opts?: pulumi.ResourceOptions
+    config: gcp.compute.SubnetworkArgs
   ): gcp.compute.Subnetwork {
+    /*
+     * v1 created the Subnetwork at the stack root (it was passed the caller's
+     * `opts`, which carried no explicit parent). It now moves UNDER this
+     * component, so we alias it back to its old root-level URN via
+     * `{ parent: pulumi.rootStackResource }` to keep it the SAME resource.
+     *
+     * `gcp.compute.Subnetwork` has NO `labels` field — parent WITHOUT label
+     * stamping (plain `{ parent: this, ... }`, not `childOpts`).
+     */
     const subnet = new gcp.compute.Subnetwork(
       this.resourceName,
       {
         region: this.region,
         ...config,
       },
-      opts
+      {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
     );
 
     return subnet;

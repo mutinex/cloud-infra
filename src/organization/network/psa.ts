@@ -14,6 +14,10 @@ import { CloudInfraOutput } from '../../core/output';
 import { PulumiInputStringSchema } from '../../core/types';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the PSA component. */
+export const PSA_TYPE = 'cloud-infra:network:CloudInfraPSA';
 
 export const CloudInfraPSAConfigSchema = z
   .object({
@@ -73,7 +77,7 @@ export interface CloudInfraPSAInputConfig
  * });
  * ```
  */
-export class CloudInfraPSA {
+export class CloudInfraPSA extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly config: CloudInfraPSAConfig;
   private readonly resourceName: string;
@@ -83,10 +87,32 @@ export class CloudInfraPSA {
 
   /**
    * Constructs a new `CloudInfraPSA` connection.
+   *
+   * This component is now a {@link pulumi.ComponentResource} (via
+   * {@link CloudInfraComponent}): the GlobalAddress and Connection are created
+   * as *children* of the component. Both v1 resources sat at the stack root, so
+   * each child carries an `alias` back to its old root-level URN
+   * (`{ parent: pulumi.rootStackResource }`) for IN-PLACE migration — generated
+   * NAMEs unchanged (F1).
+   *
+   * NOTE on labels: neither `gcp.compute.GlobalAddress` nor
+   * `gcp.servicenetworking.Connection` supports a `labels` field, so both
+   * children are parented WITHOUT label stamping (plain `{ parent: this, ... }`,
+   * not `childOpts`). The optional `gcp.Provider` likewise has no labels.
+   *
    * @param meta The `CloudInfraMeta` instance to derive naming from.
    * @param config The configuration for the PSA connection.
+   * @param opts Optional Pulumi component resource options.
    */
-  constructor(meta: CloudInfraMeta, config: CloudInfraPSAInputConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraPSAInputConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const resourceName = meta.getName();
+
+    super(PSA_TYPE, resourceName, resourceName, { domain: meta.getDomain() }, opts);
+
     CloudInfraLogger.info('Initializing Private Service Access component', {
       component: 'network-psa',
       operation: 'constructor',
@@ -108,19 +134,32 @@ export class CloudInfraPSA {
       config
     ) as CloudInfraPSAConfig;
 
-    this.resourceName = meta.getName();
+    this.resourceName = resourceName;
 
     this.range = this.createGlobalAddress(this.config);
 
     this.connection = this.createConnection(this.config, this.range);
+
+    this.registerOutputs({
+      range: this.range,
+      connection: this.connection,
+    });
   }
 
   private createGlobalAddress(
     config: CloudInfraPSAConfig
   ): gcp.compute.GlobalAddress {
-    const range = new gcp.compute.GlobalAddress(this.resourceName, {
-      ...config.reservedPeeringRanges[0],
-    });
+    // v1: root-level → alias back to root. GlobalAddress has NO labels.
+    const range = new gcp.compute.GlobalAddress(
+      this.resourceName,
+      {
+        ...config.reservedPeeringRanges[0],
+      },
+      {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
+    );
     return range;
   }
 
@@ -132,14 +171,28 @@ export class CloudInfraPSA {
     const { reservedPeeringRanges, ...connectionConfig } = config;
     const projectFromRange = config.reservedPeeringRanges?.[0]?.project;
 
-    const resourceOptions: pulumi.ResourceOptions = {
+    // v1: root-level → alias back to root. Preserve dependsOn + provider
+    // wiring exactly. Connection has NO labels.
+    const resourceOptions: pulumi.ComponentResourceOptions = {
+      parent: this,
       dependsOn: [range],
+      aliases: [{ parent: pulumi.rootStackResource }],
     };
 
     if (projectFromRange) {
-      const provider = new gcp.Provider(`${this.resourceName}-provider`, {
-        project: projectFromRange,
-      });
+      // Provider sat at the stack root in v1 (no explicit parent). It now moves
+      // under the component, so per the alias rule it gets a root-alias to keep
+      // its URN identity. gcp.Provider has NO labels.
+      const provider = new gcp.Provider(
+        `${this.resourceName}-provider`,
+        {
+          project: projectFromRange,
+        },
+        {
+          parent: this,
+          aliases: [{ parent: pulumi.rootStackResource }],
+        }
+      );
       resourceOptions.provider = provider;
     }
 
