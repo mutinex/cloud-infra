@@ -16,6 +16,81 @@ npm install @mutinex/cloud-infra
 
 ---
 
+## Name-First Construction (v2)
+
+In v2, components are constructed **name-first** —
+`new CloudInfraX("name", { domain, ...config })` — instead of the v1 meta-first
+`new CloudInfraX(new CloudInfraMeta({...}), config)`. The name-first naming
+inputs are a small surface (`NamingArgs`) that the component folds into a
+`CloudInfraMeta` internally via `resolveMeta`, producing **byte-identical** names
+to the meta-first path (Frozen Contract F1). Meta-first construction still works
+but is deprecated on the components.
+
+```ts
+import { CloudInfraAccount } from '@mutinex/cloud-infra';
+
+// Name-first: the second argument carries naming metadata + the component config.
+const sa = new CloudInfraAccount('my-app', {
+  domain: 'au', // naming metadata
+  naming: 'conventional', // naming mode (optional, this is the default)
+  // ...any account-specific config fields follow here
+});
+```
+
+### `NamingArgs`
+
+The naming inputs accepted by a name-first component (everything else in the
+args object is the component's own Pulumi config):
+
+| Field      | Type                                    | Meaning                                                              |
+| :--------- | :-------------------------------------- | :------------------------------------------------------------------- |
+| `domain`   | `'au' \| 'us' \| 'gl'`                  | Org domain. Drives the default region and the domain label.          |
+| `location` | region / multi-region / dual-region[]   | Explicit GCP location. Defaults to the region for `domain`.          |
+| `prefix`   | `string`                                | Custom prefix; overrides the Pulumi-project-derived prefix.          |
+| `naming`   | `NamingMode`                            | Which `generateName` formula to use. Defaults to `'conventional'`.   |
+
+### `NamingMode`
+
+`NamingMode` selects which of the five `generateName` formulas a name-first
+component uses. It is the discriminated union
+`'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview: string }`:
+
+| `naming`               | Formula             | Example (name `api`, prefix `p`, loc `au`) |
+| :--------------------- | :------------------ | :----------------------------------------- |
+| `'conventional'` (def) | `prefix-name-loc`   | `p-api-au`                                  |
+| `'no-location'`        | `prefix-name`       | `p-api`                                     |
+| `'no-prefix'`          | `name-loc`          | `api-au`                                    |
+| `'literal'`            | `name`              | `api`                                       |
+| `{ preview: string }`  | `prefix-name-hash7` | `p-api-1a2…`                                |
+
+`preview` is supplied as an object discriminator (`{ preview: "pr-123" }`) so the
+preview token rides along with the mode; it takes precedence over the omit
+branches. These modes map onto the meta-first flags below:
+
+- `'no-location'` → `omitLocation: true`
+- `'no-prefix'` → `omitPrefix: true`
+- `'literal'` → `omitPrefix: true, omitLocation: true`
+- `{ preview }` → `preview: <string>`
+
+```ts
+import { CloudInfraAccount } from '@mutinex/cloud-infra';
+
+// `literal` → the generated name is exactly "ci-runner".
+const sa = new CloudInfraAccount('ci-runner', { naming: 'literal' });
+
+// Preview/ephemeral name → "p-api-<hash7(pr-123)>".
+const preview = new CloudInfraAccount('api', {
+  domain: 'au',
+  naming: { preview: 'pr-123' },
+});
+```
+
+> The `NamingMode` surface covers single-name and bulk (`name: string[]`)
+> components. The zonal instance formula (`generateZonalName`) is a separate
+> naming surface not yet expressed as a `NamingMode`.
+
+---
+
 ## Key Concepts
 
 ### Value Derivation
@@ -36,7 +111,7 @@ The standard generated name follows the pattern: **`<prefix>-<name>-<location_co
 
 - **`prefix`**: The service or project identifier, derived from the Pulumi project.
 - **`name`**: The meaningful part you provide to describe the resource's purpose.
-- **`location_code`**: A short code for the geographic location (e.g., `au-se1`, `nam4`).
+- **`location_code`**: A short code for the geographic location. When `location` is **omitted**, the bare `domain` label (`au` / `us` / `gl`) is used in the name; when an explicit region is set, its short code is used (e.g. `australia-southeast1` → `au-se1`). A dual-region array is joined into its region codes (e.g. `australia-southeast1` + `australia-southeast2` → `au-se1-au-se2`).
 
 Note that the **environment (`dev`, `prd`, etc.) is handled as separate metadata** and is not part of the resource name itself. This provides environment context for policies or tagging while keeping names cleaner.
 
@@ -106,9 +181,10 @@ const saAu = new CloudInfraBulkAccount(saAuMeta, {
   project: gcpProjectId,
 });
 
-// This generates service accounts with names like:
-// - "my-proj-api-au-se1"
-// - "my-proj-frontend-au-se1"
+// With `location` omitted, the domain label is used in the name:
+// - "my-proj-api-au"
+// - "my-proj-frontend-au"
+// (Set `location: 'australia-southeast1'` to get the "...-au-se1" form.)
 ```
 
 ### Real-World Example: Project Naming with Custom Options
@@ -150,12 +226,20 @@ import { CloudInfraMeta } from '@mutinex/cloud-infra';
 // Assuming Pulumi project: "my-proj", stack: "dev"
 const meta = new CloudInfraMeta({
   name: 'api',
-  domain: 'au', // Infers location "australia-southeast1"
+  domain: 'au', // getLocation() infers "australia-southeast1"
 });
 
-export const name = meta.getName(); // "my-proj-api-au-se1"
+export const name = meta.getName(); // "my-proj-api-au" (domain label, location omitted)
 export const location = meta.getLocation(); // "australia-southeast1"
 export const prefix = meta.getPrefix(); // "my-proj"
+
+// Set an explicit region to get the region code in the name:
+const metaExplicit = new CloudInfraMeta({
+  name: 'api',
+  domain: 'au',
+  location: 'australia-southeast1',
+});
+export const explicitName = metaExplicit.getName(); // "my-proj-api-au-se1"
 ```
 
 ### 2. Global Resource (Location-less)
@@ -186,8 +270,8 @@ const meta = new CloudInfraMeta({
   location: ['us-central1', 'us-east1'],
 });
 
-export const name = meta.getName(); // "my-proj-backup-bucket-nam4"
-export const location = meta.getLocation(); // "nam4"
+export const name = meta.getName(); // "my-proj-backup-bucket-us-c1-us-e1" (joined region codes)
+export const location = meta.getLocation(); // "nam4" (dual-region code)
 export const regions = meta.getDualRegion(); // ["us-central1", "us-east1"]
 
 // getMultiRegion() provides the same array, useful for iteration.
@@ -203,15 +287,15 @@ import { CloudInfraMeta } from '@mutinex/cloud-infra';
 
 const meta = new CloudInfraMeta({
   name: ['auth-db', 'etl-server', 'ui-service'],
-  domain: 'us', // Infers "us-central1"
+  domain: 'us', // location omitted → the "us" domain label is used in names
 });
 
 export const names = meta.getNames();
 /*
 names = {
-  "auth-db": "my-proj-auth-db-us-c1",
-  "etl-server": "my-proj-etl-server-us-c1",
-  "ui-service": "my-proj-ui-service-us-c1",
+  "auth-db": "my-proj-auth-db-us",
+  "etl-server": "my-proj-etl-server-us",
+  "ui-service": "my-proj-ui-service-us",
 }
 */
 ```
@@ -224,7 +308,7 @@ The `location` property is flexible and can accept a single region, a multi-regi
 
 | `domain`  | `location`                               | `getLocation()`          | `getRegion()`            | `getDualRegion()`          |
 | :-------- | :--------------------------------------- | :----------------------- | :----------------------- | :------------------------- |
-| _default_ | _omitted_                                | `"undefined"`            | `"undefined"`            | **Error**                  |
+| _default_ (`gl`) | _omitted_                         | `"global"`               | `"global"`               | **Error**                  |
 | `"au"`    | _omitted_                                | `"australia-southeast1"` | `"australia-southeast1"` | **Error**                  |
 | `"au"`    | `["asia-northeast1", "asia-northeast2"]` | `"asia1"`                | **Error**                | `["asia-northeast1", ...]` |
 | `"us"`    | _omitted_                                | `"us-central1"`          | `"us-central1"`          | **Error**                  |
