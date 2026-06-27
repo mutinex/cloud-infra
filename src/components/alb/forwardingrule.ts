@@ -34,6 +34,13 @@ interface CreateGlobalForwardingRuleParams {
   target: pulumi.Input<string>;
   /** The name of the resource */
   resourceName: string;
+  /**
+   * Optional Pulumi resource options threaded from the ALB component so the
+   * forwarding rule is parented under the component (with a root-stack alias).
+   * GlobalForwardingRule DOES support `labels`, so the component threads its
+   * label-stamping `childOpts(...)` here. Omitted in direct/unit usage.
+   */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -52,6 +59,8 @@ interface CreateRegionalForwardingRuleParams {
   resourceName: string;
   /** The GCP region where the forwarding rule will be created */
   region: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -73,6 +82,8 @@ export interface CreateForwardingRuleParams {
   target: pulumi.Input<string>;
   /** The GCP region (required for regional forwarding rules) */
   region?: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -131,7 +142,7 @@ export function createGlobalForwardingRule(
     'global forwarding rule',
     params.resourceName,
     () => {
-      const { config, ipAddress, target, resourceName, meta } = params;
+      const { config, ipAddress, target, resourceName, meta, opts } = params;
 
       const forwardingRuleArgs: gcp.compute.GlobalForwardingRuleArgs = {
         ...config, // User config first
@@ -147,7 +158,8 @@ export function createGlobalForwardingRule(
 
       const forwardingRule = new gcp.compute.GlobalForwardingRule(
         resourceName,
-        forwardingRuleArgs
+        forwardingRuleArgs,
+        ...(opts ? [opts] : [])
       );
 
       return { forwardingRule };
@@ -175,7 +187,8 @@ export function createRegionalForwardingRule(
     'regional forwarding rule',
     params.resourceName,
     () => {
-      const { config, ipAddress, target, resourceName, region, meta } = params;
+      const { config, ipAddress, target, resourceName, region, meta, opts } =
+        params;
 
       const forwardingRuleArgs: gcp.compute.ForwardingRuleArgs = {
         ...config, // User config first
@@ -192,7 +205,8 @@ export function createRegionalForwardingRule(
 
       const forwardingRule = new gcp.compute.ForwardingRule(
         resourceName,
-        forwardingRuleArgs
+        forwardingRuleArgs,
+        ...(opts ? [opts] : [])
       );
 
       return { forwardingRule };
@@ -214,7 +228,8 @@ export function createRegionalForwardingRule(
 export function createForwardingRule(
   params: CreateForwardingRuleParams
 ): CreateForwardingRuleResult {
-  const { config, meta, resourceName, ipAddress, target, region } = params;
+  const { config, meta, resourceName, ipAddress, target, region, opts } =
+    params;
 
   if (region) {
     const forwardingRuleConfig: gcp.compute.ForwardingRuleArgs = {
@@ -230,6 +245,7 @@ export function createForwardingRule(
       target,
       resourceName,
       region,
+      opts,
     });
     return { resource: forwardingRule };
   } else {
@@ -245,6 +261,7 @@ export function createForwardingRule(
       ipAddress,
       target,
       resourceName,
+      opts,
     });
     return { resource: forwardingRule };
   }

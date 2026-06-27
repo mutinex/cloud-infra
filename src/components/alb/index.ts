@@ -43,6 +43,7 @@ import { deriveRegion } from '../../core/helpers';
 import { ValidationError, ResourceError } from '../../core/errors';
 import { PulumiTypeDetector } from '../../core/pulumi-type-detector';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
 
 import { resolveGlobalAddress, resolveRegionalAddress } from './address';
 import { resolveGlobalProxy, resolveRegionalProxy } from './proxy';
@@ -83,6 +84,9 @@ export const CloudInfraAlbConfigSchema = z
 
 export type CloudInfraAlbConfig = AlbConfig;
 
+/** Pulumi type token for the ALB component. */
+export const CLOUD_INFRA_ALB_TYPE = 'cloud-infra:alb:CloudInfraAlb';
+
 /**
  * CloudInfraAlb creates and manages Application Load Balancer infrastructure.
  *
@@ -101,7 +105,7 @@ export type CloudInfraAlbConfig = AlbConfig;
  * Pulumi arguments to be provided while applying sensible defaults based on
  * the metadata configuration.
  */
-export class CloudInfraAlb {
+export class CloudInfraAlb extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly config: CloudInfraAlbConfig;
   private readonly isGlobal: boolean;
@@ -137,7 +141,24 @@ export class CloudInfraAlb {
    * @throws {ValidationError} If the configuration is invalid or name is an array
    * @throws {ResourceError} If resource creation fails
    */
-  constructor(meta: CloudInfraMeta, config: CloudInfraAlbConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraAlbConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    // Register the component node FIRST (super must precede any `this` use).
+    // `meta.getName()`/`getDomain()` do not touch `this`, so they are safe
+    // here. The generated NAME is kept byte-identical (Frozen Contract F2) —
+    // each child below is still created with the bare `meta.getName()`.
+    const resourceName = meta.getName();
+    super(
+      CLOUD_INFRA_ALB_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     try {
       CloudInfraLogger.info('Initializing ALB component', {
         component: 'alb',
@@ -172,13 +193,24 @@ export class CloudInfraAlb {
       // Validate certificate configuration
       this.validateCertificateConfig(config);
 
-      // Create resources based on type
-      const resourceName = meta.getName();
+      // Create resources based on type. Reuse the same `resourceName` computed
+      // for `super()` above so every child keeps the bare, byte-identical name.
       if (this.isGlobal) {
         this.createGlobalResources(config as GlobalAlbConfig, resourceName);
       } else {
         this.createRegionalResources(config as RegionAlbConfig, resourceName);
       }
+
+      // Surface the created children as the component's logical outputs.
+      this.registerOutputs({
+        forwardingRule: this.isGlobal
+          ? this.globalForwardingRule
+          : this.regionalForwardingRule,
+        address: this.isGlobal ? this.globalAddress : this.regionalAddress,
+        urlMap: this.isGlobal ? this.globalUrlMap : this.regionalUrlMap,
+        proxy: this.isGlobal ? this.globalProxy : this.regionalProxy,
+        certificate: this.certificate,
+      });
     } catch (err) {
       if (err instanceof z.ZodError) {
         throw new ValidationError(
@@ -269,6 +301,44 @@ export class CloudInfraAlb {
     }
   }
 
+  /*
+   * ───────────────────────────────────────────────────────────────────────────
+   *  CHILD RESOURCE OPTIONS (parenting + non-destructive alias)
+   * ───────────────────────────────────────────────────────────────────────────
+   *  Every ALB child was historically created FLAT at the stack ROOT (no
+   *  explicit parent). Wrapping in a ComponentResource re-parents them under
+   *  `this`, which prefixes their URNs with the component type token. To keep
+   *  them the SAME resources (update-in-place, not destroy+recreate) each child
+   *  aliases back to its old root-level URN via
+   *  `{ parent: pulumi.rootStackResource }` (the type-correct equivalent of
+   *  `noParent` on this pinned Pulumi version).
+   *
+   *  Two flavours:
+   *   - `labeledChildOpts()` → base `childOpts(...)` = parent + the org
+   *     label-stamping transformation. Used ONLY for children whose GCP schema
+   *     HAS a `labels` field: Address / GlobalAddress and
+   *     ForwardingRule / GlobalForwardingRule.
+   *   - `plainChildOpts()`   → parent + alias, NO label transformation. Used for
+   *     every label-LESS child: URLMap / RegionUrlMap, the Target(Http|Https)
+   *     proxy variants, and SSLCertificate / RegionSslCertificate. Injecting a
+   *     `labels` key onto these is a HARD provider error, so they must NOT go
+   *     through the stamping transformation.
+   */
+
+  /** Root-stack alias shared by every child (all were created flat in v1). */
+  private static readonly ROOT_ALIAS: pulumi.CustomResourceOptions['aliases'] =
+    [{ parent: pulumi.rootStackResource }];
+
+  /** Opts for label-SUPPORTING children: parent + alias + org label stamping. */
+  private labeledChildOpts(): pulumi.CustomResourceOptions {
+    return this.childOpts({ aliases: CloudInfraAlb.ROOT_ALIAS });
+  }
+
+  /** Opts for label-LESS children: parent + alias, but NO label transform. */
+  private plainChildOpts(): pulumi.CustomResourceOptions {
+    return { parent: this, aliases: CloudInfraAlb.ROOT_ALIAS };
+  }
+
   /**
    * Creates global load balancer resources.
    * @private
@@ -293,6 +363,8 @@ export class CloudInfraAlb {
         input: addressInput,
         meta: this.meta,
         resourceName,
+        // GlobalAddress supports `labels` → label-stamping child opts.
+        opts: this.labeledChildOpts(),
       });
     this.globalAddress = createdAddress;
 
@@ -344,6 +416,8 @@ export class CloudInfraAlb {
         meta: this.meta,
         resourceName,
         region: this.region,
+        // Address supports `labels` → label-stamping child opts.
+        opts: this.labeledChildOpts(),
       });
     this.regionalAddress = createdAddress as gcp.compute.Address | undefined;
 
@@ -410,23 +484,26 @@ export class CloudInfraAlb {
     targetConfig: GlobalTargetProxyConfig,
     resourceName: string
   ): pulumi.Input<string> {
-    // Resolve URL map
+    // Resolve URL map (URLMap has NO `labels` field → plain child opts).
     const urlMapResult = resolveGlobalUrlMap({
       input: targetConfig.urlMap,
       meta: this.meta,
       resourceName,
+      opts: this.plainChildOpts(),
     });
 
     if (urlMapResult.resource) {
       this.globalUrlMap = urlMapResult.resource as gcp.compute.URLMap;
     }
 
-    // Create proxy
+    // Create proxy (proxies + any created SSL cert have NO `labels` field →
+    // plain child opts threaded down to both).
     const proxyResult = resolveGlobalProxy({
       input: targetConfig,
       meta: this.meta,
       resourceName,
       urlMap: urlMapResult.value,
+      opts: this.plainChildOpts(),
     });
 
     this.globalProxy = proxyResult.proxy as
@@ -457,26 +534,29 @@ export class CloudInfraAlb {
     const loadBalancingScheme = (this.config as RegionAlbConfig)
       .loadBalancingScheme;
 
-    // Resolve URL map
+    // Resolve URL map (RegionUrlMap has NO `labels` field → plain child opts).
     const urlMapResult = resolveRegionalUrlMap({
       input: targetConfig.urlMap,
       meta: this.meta,
       resourceName,
       region: this.region,
       loadBalancingScheme,
+      opts: this.plainChildOpts(),
     });
 
     if (urlMapResult.resource) {
       this.regionalUrlMap = urlMapResult.resource as gcp.compute.RegionUrlMap;
     }
 
-    // Create proxy
+    // Create proxy (proxies + any created regional SSL cert have NO `labels`
+    // field → plain child opts threaded down to both).
     const proxyResult = resolveRegionalProxy({
       input: targetConfig,
       meta: this.meta,
       resourceName,
       urlMap: urlMapResult.value,
       region: this.region,
+      opts: this.plainChildOpts(),
     });
 
     this.regionalProxy = proxyResult.proxy as
@@ -504,7 +584,8 @@ export class CloudInfraAlb {
     void target;
     void ipAddress;
 
-    // Create global forwarding rule - pass config without target/ipAddress
+    // Create global forwarding rule - pass config without target/ipAddress.
+    // GlobalForwardingRule supports `labels` → label-stamping child opts.
     const { resource } = createForwardingRule({
       meta: this.meta,
       config: forwardingRuleConfig as Record<string, unknown>,
@@ -512,6 +593,7 @@ export class CloudInfraAlb {
       target: targetProxyReference,
       resourceName,
       region: undefined, // Global resources don't have region
+      opts: this.labeledChildOpts(),
     });
 
     return resource as gcp.compute.GlobalForwardingRule;
@@ -534,7 +616,8 @@ export class CloudInfraAlb {
     void target;
     void ipAddress;
 
-    // Create regional forwarding rule - pass config without target/ipAddress
+    // Create regional forwarding rule - pass config without target/ipAddress.
+    // ForwardingRule supports `labels` → label-stamping child opts.
     const { resource } = createForwardingRule({
       meta: this.meta,
       config: forwardingRuleConfig as Record<string, unknown>,
@@ -542,6 +625,7 @@ export class CloudInfraAlb {
       target: targetProxyReference,
       resourceName,
       region: this.region,
+      opts: this.labeledChildOpts(),
     });
 
     return resource as gcp.compute.ForwardingRule;

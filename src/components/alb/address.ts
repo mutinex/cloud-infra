@@ -30,6 +30,13 @@ interface CreateGlobalAddressParams {
   config: gcp.compute.GlobalAddressArgs;
   /** The name of the resource */
   resourceName: string;
+  /**
+   * Optional Pulumi resource options. When the ALB component creates this
+   * child it threads its `childOpts({...})` here so the address is parented
+   * under the component (and carries the root-stack alias for non-destructive
+   * migration). Omitted in direct/unit usage → behaves as before.
+   */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -44,6 +51,8 @@ interface CreateRegionalAddressParams {
   resourceName: string;
   /** The GCP region where the address will be created */
   region: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -62,6 +71,8 @@ export interface ResolveAddressParams {
   resourceName: string;
   /** The GCP region (required for regional addresses) */
   region?: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -116,7 +127,7 @@ export function createGlobalAddress(params: CreateGlobalAddressParams): {
   address: gcp.compute.GlobalAddress;
 } {
   return withErrorHandling('global address', params.resourceName, () => {
-    const { config, resourceName, meta } = params;
+    const { config, resourceName, meta, opts } = params;
 
     const addressArgs: gcp.compute.GlobalAddressArgs = {
       ...config, // User config first
@@ -124,7 +135,13 @@ export function createGlobalAddress(params: CreateGlobalAddressParams): {
       project: config.project ?? meta.getGcpProject(),
     };
 
-    const address = new gcp.compute.GlobalAddress(resourceName, addressArgs);
+    // Pass `opts` only when supplied so direct callers still see a 2-arg
+    // constructor call (no spurious trailing `undefined`).
+    const address = new gcp.compute.GlobalAddress(
+      resourceName,
+      addressArgs,
+      ...(opts ? [opts] : [])
+    );
     return { address };
   });
 }
@@ -144,7 +161,7 @@ export function createRegionalAddress(params: CreateRegionalAddressParams): {
   address: gcp.compute.Address;
 } {
   return withErrorHandling('regional address', params.resourceName, () => {
-    const { config, resourceName, region, meta } = params;
+    const { config, resourceName, region, meta, opts } = params;
 
     const addressArgs: gcp.compute.AddressArgs = {
       ...config, // User config first
@@ -153,7 +170,11 @@ export function createRegionalAddress(params: CreateRegionalAddressParams): {
       region: region,
     };
 
-    const address = new gcp.compute.Address(resourceName, addressArgs);
+    const address = new gcp.compute.Address(
+      resourceName,
+      addressArgs,
+      ...(opts ? [opts] : [])
+    );
     return { address };
   });
 }
@@ -199,13 +220,14 @@ function resolveAddressCommon(
 export function resolveGlobalAddress(
   params: ResolveAddressParams
 ): ResolveAddressResult {
-  const { input, meta, resourceName } = params;
+  const { input, meta, resourceName, opts } = params;
 
   return resolveAddressCommon(params, () =>
     createGlobalAddress({
       meta,
       config: (input as gcp.compute.GlobalAddressArgs) || {},
       resourceName,
+      opts,
     })
   );
 }
@@ -225,7 +247,7 @@ export function resolveGlobalAddress(
 export function resolveRegionalAddress(
   params: ResolveAddressParams
 ): ResolveAddressResult {
-  const { input, meta, resourceName, region } = params;
+  const { input, meta, resourceName, region, opts } = params;
 
   if (!region) {
     throw new ValidationError(
@@ -241,6 +263,7 @@ export function resolveRegionalAddress(
       config: (input as gcp.compute.AddressArgs) || {},
       resourceName,
       region,
+      opts,
     })
   );
 }

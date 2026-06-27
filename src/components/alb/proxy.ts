@@ -45,6 +45,13 @@ interface CreateTargetHttpsProxyParams extends BaseProxyParams {
   config: gcp.compute.TargetHttpsProxyArgs;
   /** Optional SSL certificate to be used by the proxy */
   certificate?: gcp.compute.SSLCertificate;
+  /**
+   * Optional Pulumi resource options threaded from the ALB component so the
+   * proxy is parented under the component (with a root-stack alias). Proxy
+   * resources have NO `labels` field, so the component passes PLAIN opts here
+   * (no label transformation). Omitted in direct/unit usage.
+   */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -53,6 +60,8 @@ interface CreateTargetHttpsProxyParams extends BaseProxyParams {
 interface CreateTargetHttpProxyParams extends BaseProxyParams {
   /** Configuration for the target HTTP proxy based on Pulumi's GCP provider */
   config: gcp.compute.TargetHttpProxyArgs;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -65,6 +74,8 @@ interface CreateRegionalTargetHttpsProxyParams extends BaseProxyParams {
   certificate?: gcp.compute.SSLCertificate;
   /** The GCP region for the proxy */
   region: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -75,6 +86,8 @@ interface CreateRegionalTargetHttpProxyParams extends BaseProxyParams {
   config: gcp.compute.RegionTargetHttpProxyArgs;
   /** The GCP region for the proxy */
   region: string;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -94,6 +107,12 @@ export interface ResolveProxyParams {
   urlMap: pulumi.Input<string>;
   /** The GCP region (required for regional proxies) */
   region?: string;
+  /**
+   * Optional Pulumi resource options threaded from the ALB component. Applied
+   * to BOTH the proxy and any SSL certificate created for it (all of which
+   * lack a `labels` field → PLAIN opts, no label transformation).
+   */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -133,6 +152,8 @@ export interface CreateProxyParams {
   region?: string;
   /** Whether this is an HTTPS proxy */
   isHttps: boolean;
+  /** Optional Pulumi resource options threaded from the ALB component. */
+  opts?: pulumi.CustomResourceOptions;
 }
 
 /**
@@ -186,7 +207,12 @@ function withErrorHandling<T>(
  */
 function resolveSslCertificate(
   sslCertificates: unknown,
-  params: { meta: CloudInfraMeta; resourceName: string; region?: string }
+  params: {
+    meta: CloudInfraMeta;
+    resourceName: string;
+    region?: string;
+    opts?: pulumi.CustomResourceOptions;
+  }
 ): {
   certificate?: gcp.compute.SSLCertificate | gcp.compute.RegionSslCertificate;
   certificateRefs?: pulumi.Input<pulumi.Input<string>[]>;
@@ -203,6 +229,7 @@ function resolveSslCertificate(
         config: sslCertificates as gcp.compute.RegionSslCertificateArgs,
         resourceName: params.resourceName,
         region: params.region,
+        opts: params.opts,
       });
       return { certificate };
     } else {
@@ -210,6 +237,7 @@ function resolveSslCertificate(
         meta: params.meta,
         config: sslCertificates as gcp.compute.SSLCertificateArgs,
         resourceName: params.resourceName,
+        opts: params.opts,
       });
       return { certificate };
     }
@@ -236,7 +264,7 @@ export function createTargetHttpsProxy(params: CreateTargetHttpsProxyParams): {
   proxy: gcp.compute.TargetHttpsProxy;
 } {
   return withErrorHandling('target HTTPS proxy', params.resourceName, () => {
-    const { config, certificate, resourceName, meta } = params;
+    const { config, certificate, resourceName, meta, opts } = params;
 
     const proxyArgs: gcp.compute.TargetHttpsProxyArgs = {
       ...config, // User config first
@@ -248,7 +276,11 @@ export function createTargetHttpsProxy(params: CreateTargetHttpsProxyParams): {
       proxyArgs.sslCertificates = [certificate.selfLink];
     }
 
-    const proxy = new gcp.compute.TargetHttpsProxy(resourceName, proxyArgs);
+    const proxy = new gcp.compute.TargetHttpsProxy(
+      resourceName,
+      proxyArgs,
+      ...(opts ? [opts] : [])
+    );
     return { proxy };
   });
 }
@@ -268,14 +300,18 @@ export function createTargetHttpProxy(params: CreateTargetHttpProxyParams): {
   proxy: gcp.compute.TargetHttpProxy;
 } {
   return withErrorHandling('target HTTP proxy', params.resourceName, () => {
-    const { config, resourceName, meta } = params;
+    const { config, resourceName, meta, opts } = params;
 
     const proxyArgs: gcp.compute.TargetHttpProxyArgs = {
       ...config, // User config first
       project: config.project ?? meta.getGcpProject(),
     };
 
-    const proxy = new gcp.compute.TargetHttpProxy(resourceName, proxyArgs);
+    const proxy = new gcp.compute.TargetHttpProxy(
+      resourceName,
+      proxyArgs,
+      ...(opts ? [opts] : [])
+    );
     return { proxy };
   });
 }
@@ -300,7 +336,7 @@ export function createRegionalTargetHttpsProxy(
     'regional target HTTPS proxy',
     params.resourceName,
     () => {
-      const { config, certificate, resourceName, region, meta } = params;
+      const { config, certificate, resourceName, region, meta, opts } = params;
 
       const proxyArgs: gcp.compute.RegionTargetHttpsProxyArgs = {
         ...config, // User config first
@@ -315,7 +351,8 @@ export function createRegionalTargetHttpsProxy(
 
       const proxy = new gcp.compute.RegionTargetHttpsProxy(
         resourceName,
-        proxyArgs
+        proxyArgs,
+        ...(opts ? [opts] : [])
       );
       return { proxy };
     }
@@ -342,7 +379,7 @@ export function createRegionalTargetHttpProxy(
     'regional target HTTP proxy',
     params.resourceName,
     () => {
-      const { config, resourceName, region, meta } = params;
+      const { config, resourceName, region, meta, opts } = params;
 
       const proxyArgs: gcp.compute.RegionTargetHttpProxyArgs = {
         ...config, // User config first
@@ -352,7 +389,8 @@ export function createRegionalTargetHttpProxy(
 
       const proxy = new gcp.compute.RegionTargetHttpProxy(
         resourceName,
-        proxyArgs
+        proxyArgs,
+        ...(opts ? [opts] : [])
       );
       return { proxy };
     }
@@ -370,13 +408,13 @@ function resolveProxyCommon(
   params: ResolveProxyParams,
   isRegional: boolean
 ): ResolveProxyResult {
-  const { input, meta, resourceName, urlMap, region } = params;
+  const { input, meta, resourceName, urlMap, region, opts } = params;
   const targetConfig = input;
 
   // Resolve SSL certificates
   const { certificate, certificateRefs } = resolveSslCertificate(
     targetConfig.sslCertificates,
-    { meta, resourceName, region }
+    { meta, resourceName, region, opts }
   );
 
   // Extract Certificate Manager configurations
@@ -434,6 +472,7 @@ function resolveProxyCommon(
     certificate,
     region: isRegional ? region : undefined,
     isHttps,
+    opts,
   });
 
   return {
@@ -498,7 +537,8 @@ export function resolveRegionalProxy(
  * @returns The created proxy resource
  */
 export function createProxy(params: CreateProxyParams): CreateProxyResult {
-  const { config, meta, resourceName, certificate, region, isHttps } = params;
+  const { config, meta, resourceName, certificate, region, isHttps, opts } =
+    params;
 
   if (region) {
     // Regional proxy
@@ -509,6 +549,7 @@ export function createProxy(params: CreateProxyParams): CreateProxyResult {
         certificate,
         resourceName,
         region,
+        opts,
       });
       return { resource: proxy };
     } else {
@@ -517,6 +558,7 @@ export function createProxy(params: CreateProxyParams): CreateProxyResult {
         config: config as gcp.compute.RegionTargetHttpProxyArgs,
         resourceName,
         region,
+        opts,
       });
       return { resource: proxy };
     }
@@ -528,6 +570,7 @@ export function createProxy(params: CreateProxyParams): CreateProxyResult {
         config: config as gcp.compute.TargetHttpsProxyArgs,
         certificate,
         resourceName,
+        opts,
       });
       return { resource: proxy };
     } else {
@@ -535,6 +578,7 @@ export function createProxy(params: CreateProxyParams): CreateProxyResult {
         meta,
         config: config as gcp.compute.TargetHttpProxyArgs,
         resourceName,
+        opts,
       });
       return { resource: proxy };
     }
