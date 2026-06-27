@@ -110,9 +110,11 @@ export class CloudInfraConnector extends CloudInfraComponent {
     config: gcp.vpcaccess.ConnectorArgs,
     opts?: pulumi.ComponentResourceOptions
   ): gcp.vpcaccess.Connector {
-    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
-    // gcp.vpcaccess.Connector has NO labels → plain opts (not childOpts).
-    // PRESERVE any caller opts (e.g. dependsOn / provider) by merging them in.
+    // v1: root-level (no parent) → childOpts() aliases back to root for
+    // IN-PLACE migration. gcp.vpcaccess.Connector has NO labels → args are NOT
+    // passed through withLabels. PRESERVE any caller opts (e.g. dependsOn /
+    // provider) by merging them in; the component parent + root-alias always
+    // win (same precedence as v1).
     const connector = new gcp.vpcaccess.Connector(
       this.resourceName,
       {
@@ -121,8 +123,7 @@ export class CloudInfraConnector extends CloudInfraComponent {
       },
       {
         ...(opts ?? {}),
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
+        ...this.childOpts(),
       }
     );
 

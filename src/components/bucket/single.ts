@@ -184,14 +184,12 @@ export class CloudInfraBucket extends CloudInfraComponent {
       bucketArgs.publicAccessPrevention = 'enforced';
     }
 
-    // gcp.storage.Bucket supports `labels` → childOpts. v1 created it FLAT, so
-    // alias back to the stack root for in-place migration.
+    // gcp.storage.Bucket supports `labels` → merge org labels into its args.
+    // v1 created it FLAT (stack root), so childOpts() aliases it back to root.
     this.bucket = new gcp.storage.Bucket(
       componentName,
-      bucketArgs,
-      this.childOpts({
-        aliases: [{ parent: pulumi.rootStackResource }],
-      })
+      this.withLabels(bucketArgs),
+      this.childOpts()
     );
 
     this.registerOutputs({

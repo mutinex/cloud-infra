@@ -28,8 +28,9 @@ export const SUBNET_TYPE = 'cloud-infra:network:CloudInfraSubnet';
  * IN-PLACE (no destroy/recreate) — the generated NAME is kept byte-identical
  * (Frozen Contract F1) and only the URN parent path changes.
  *
- * NOTE: `gcp.compute.Subnetwork` has NO `labels` field, so the child is
- * parented WITHOUT label stamping (plain `{ parent: this, ... }`).
+ * NOTE: `gcp.compute.Subnetwork` has NO `labels` field, so the child's args are
+ * NOT passed through `withLabels` (no labels injected); it uses `childOpts()`
+ * for the parent + root-alias only.
  *
  * The public surface is UNCHANGED from v1: same `constructor(meta, config)`
  * signature and the same getters.
@@ -69,7 +70,13 @@ export class CloudInfraSubnet extends CloudInfraComponent {
   ) {
     const resourceName = meta.getName();
 
-    super(SUBNET_TYPE, resourceName, resourceName, { domain: meta.getDomain() }, opts);
+    super(
+      SUBNET_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
 
     CloudInfraLogger.info('Initializing subnet component', {
       component: 'network-subnet',
@@ -108,8 +115,8 @@ export class CloudInfraSubnet extends CloudInfraComponent {
      * component, so we alias it back to its old root-level URN via
      * `{ parent: pulumi.rootStackResource }` to keep it the SAME resource.
      *
-     * `gcp.compute.Subnetwork` has NO `labels` field — parent WITHOUT label
-     * stamping (plain `{ parent: this, ... }`, not `childOpts`).
+     * `gcp.compute.Subnetwork` has NO `labels` field — childOpts() parents +
+     * root-aliases, and args are NOT passed through withLabels.
      */
     const subnet = new gcp.compute.Subnetwork(
       this.resourceName,
@@ -117,10 +124,7 @@ export class CloudInfraSubnet extends CloudInfraComponent {
         region: this.region,
         ...config,
       },
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
 
     return subnet;

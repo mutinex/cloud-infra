@@ -6,11 +6,16 @@
  *
  *   1. A real Pulumi component node in the resource graph (so children can be
  *      parented under it and surfaced as a logical unit).
- *   2. A `childOpts()` helper that both (a) parents children to the component
- *      and (b) attaches a resource `transformation` which stamps uniform org
- *      labels onto *every* child – regardless of whether that child's args
- *      spread caller config or not. This closes the class of bugs where a label
- *      block is wired into one child but silently forgotten on a sibling.
+ *   2. A small, explicit API for wiring children correctly:
+ *        - {@link withLabels} merges the uniform org labels into a child's
+ *          ARGS (only call it for children whose GCP type supports `labels`);
+ *        - {@link childOpts} / {@link nestedChildOpts} encode the two
+ *          v1 → component alias recipes so conversions cannot get aliasing wrong.
+ *
+ * Labels live in each child's own args now (not a parent transformation), so the
+ * Pulumi transformation-inheritance gotcha (redesign-notes §8) no longer applies:
+ * a label-less child simply isn't passed through `withLabels`, so it can never
+ * receive a `labels` key it would reject.
  *
  * This is runtime-light: the base creates no GCP resources itself.
  */
@@ -18,7 +23,8 @@
 import * as pulumi from '@pulumi/pulumi';
 
 /**
- * The baseline org labels stamped onto every child of a `CloudInfraComponent`.
+ * The baseline org labels merged into every label-supporting child of a
+ * `CloudInfraComponent` (via {@link withLabels}).
  *
  * - `env`        – the active Pulumi stack ({@link pulumi.getStack}).
  * - `service`    – the caller-supplied component (input) name.
@@ -43,6 +49,11 @@ export interface CloudInfraComponentBaseArgs {
   domain?: string;
 }
 
+/** A child-args shape that may already carry caller-supplied `labels`. */
+type WithOptionalLabels = {
+  labels?: pulumi.Input<Record<string, pulumi.Input<string>>>;
+};
+
 /**
  * Shared base class for v2 cloud-infra ComponentResources.
  *
@@ -50,48 +61,15 @@ export interface CloudInfraComponentBaseArgs {
  *   `"cloud-infra:cloudrunservice:CloudRunService"`.
  */
 export abstract class CloudInfraComponent extends pulumi.ComponentResource {
-  /**
-   * Pulumi type tokens for child resources whose GCP schema has NO `labels`
-   * input. The label-stamping transformation skips these so it never injects an
-   * unsupported `labels` key (which the provider rejects with "Invalid or
-   * unknown key", failing the deployment). Serverless NEGs are the case that
-   * surfaced this; extend as new label-less children appear.
-   */
-  private static readonly LABEL_UNSUPPORTED_TYPES: ReadonlySet<string> =
-    new Set([
-      'gcp:compute/regionNetworkEndpointGroup:RegionNetworkEndpointGroup',
-      // SecretVersion / RegionalSecretVersion are transitive children of the
-      // Secret/RegionalSecret (parent: this.secret). The label transformation
-      // attached to the Secret via childOpts propagates to them, but the
-      // *Version resources have NO `labels` input and reject it with
-      // "Invalid or unknown key". Skip them.
-      'gcp:secretmanager/secretVersion:SecretVersion',
-      'gcp:secretmanager/regionalSecretVersion:RegionalSecretVersion',
-      // ── Project component transitive children ─────────────────────────────
-      // CloudInfraHostProject / CloudInfraServiceProject parent every child
-      // under the label-supporting `gcp.organizations.Project` (which carries
-      // the label transform via childOpts). Pulumi transformation inheritance
-      // (Trap §8) propagates that transform to ALL transitive children. The
-      // following project children have NO `labels` input and hard-error with
-      // "Invalid or unknown key" when one is injected. Skip them.
-      'gcp:projects/service:Service',
-      'gcp:projects/iAMMember:IAMMember',
-      'gcp:projects/serviceIdentity:ServiceIdentity',
-      'gcp:tags/tagBinding:TagBinding',
-      'gcp:compute/network:Network',
-      'gcp:compute/sharedVPCHostProject:SharedVPCHostProject',
-      'gcp:compute/sharedVPCServiceProject:SharedVPCServiceProject',
-      // Dynamic providers (DelayResource, ServiceUsageApiBootstrap) used by the
-      // project components. Dynamic resources have no GCP `labels` schema; the
-      // injected key would pollute their state / show a spurious diff. Skip.
-      'pulumi-nodejs:dynamic:Resource',
-    ]);
-
   /** The resolved, generated resource name shared by the component's children. */
   protected readonly generatedName: string;
 
-  /** Baseline labels stamped onto every child via {@link childOpts}. */
-  private readonly baselineLabels: CloudInfraComponentLabels;
+  /**
+   * The baseline org labels for this component, merged into label-supporting
+   * children via {@link withLabels}. EXACT same key set/values as the v1 label
+   * transformation (`domain` / `env` / `service` / `managed-by`).
+   */
+  protected readonly orgLabels: CloudInfraComponentLabels;
 
   /**
    * @param typeToken      Fully-qualified Pulumi component type token.
@@ -99,7 +77,7 @@ export abstract class CloudInfraComponent extends pulumi.ComponentResource {
    *                       `service` label value.
    * @param generatedName  The fully-resolved generated resource name (computed
    *                       by the concrete component, typically via
-   *                       `CloudInfraMeta`). Exposed via {@link getName}.
+   *                       `CloudInfraMeta`). Exposed via {@link getGeneratedName}.
    * @param args           Base args (currently just `domain`).
    * @param opts           Component resource options.
    */
@@ -115,7 +93,7 @@ export abstract class CloudInfraComponent extends pulumi.ComponentResource {
     super(typeToken, name, {}, opts);
 
     this.generatedName = generatedName;
-    this.baselineLabels = {
+    this.orgLabels = {
       domain: args.domain ?? 'gl',
       env: pulumi.getStack(),
       service: name,
@@ -135,56 +113,73 @@ export abstract class CloudInfraComponent extends pulumi.ComponentResource {
   }
 
   /**
-   * Build `CustomResourceOptions` for a child resource.
+   * Merge the org labels into a child's ARGS.
    *
-   * The returned options:
-   *   - set `parent: this` so the child lives under the component, and
-   *   - attach a `transformation` that merges the baseline org labels into the
-   *     child's `props.labels`.
+   * Call this **only** for children whose GCP type supports a `labels` input
+   * (see the validated label-support map in redesign-notes §9b). Children
+   * without label support must pass their args through unchanged — passing a
+   * label-less type through `withLabels` would inject a `labels` key the
+   * provider rejects ("Invalid or unknown key").
    *
-   * Label merge semantics: `{ ...baseline, ...existing }`. The baseline
-   * provides a uniform floor; any label the caller already set on the child
-   * wins (so callers can override, e.g., a per-resource `service` value).
+   * Merge semantics: `{ ...orgLabels, ...(args.labels ?? {}) }`. The org labels
+   * provide a uniform floor; any label the caller already set on the child wins.
+   * Because labels live in the child's own args (not an inherited parent
+   * transformation), a label-less sibling/descendant can never receive them.
+   */
+  protected withLabels<T extends WithOptionalLabels>(
+    args: T
+  ): T & { labels: pulumi.Input<Record<string, pulumi.Input<string>>> } {
+    const existing = args.labels ?? {};
+    return {
+      ...args,
+      labels: { ...this.orgLabels, ...existing },
+    };
+  }
+
+  /**
+   * Child options for a resource that was at the v1 STACK ROOT (no parent) and
+   * is now parented under this component.
    *
-   * The transformation is the load-bearing part: it runs against *every* child
-   * regardless of whether that child's args spread caller config, so labels can
-   * never be "forgotten" on one sibling while present on another.
+   * Parents the child to `this` AND aliases it back to its old root-level URN
+   * (`{ parent: pulumi.rootStackResource }`, the type-correct equivalent of
+   * `noParent` in this pinned Pulumi version) so an existing deployment migrates
+   * IN-PLACE (update, not destroy+recreate). See redesign-notes §9/§9c.
    *
-   * @param extra Additional child options to merge in (e.g. `aliases`).
-   *   Any caller-supplied `transformations` run after the label transformation.
+   * @param extra Additional child options merged in (e.g. `protect`,
+   *   `deleteBeforeReplace`, `provider`, `dependsOn`). A caller-supplied
+   *   `parent` or `aliases` here OVERRIDES the defaults.
    */
   protected childOpts(
     extra: pulumi.CustomResourceOptions = {}
   ): pulumi.CustomResourceOptions {
-    const labelTransformation: pulumi.ResourceTransformation = args => {
-      // Not every GCP resource accepts a `labels` input. Serverless
-      // RegionNetworkEndpointGroups, for instance, reject it ("Invalid or
-      // unknown key"). Stamping labels onto such a child would fail the whole
-      // deployment. Skip those types so the floor is applied only where the
-      // provider supports it.
-      if (CloudInfraComponent.LABEL_UNSUPPORTED_TYPES.has(args.type)) {
-        return { props: args.props, opts: args.opts };
-      }
-
-      const existing =
-        (args.props as { labels?: Record<string, pulumi.Input<string>> })
-          .labels ?? {};
-
-      return {
-        props: {
-          ...args.props,
-          labels: { ...this.baselineLabels, ...existing },
-        },
-        opts: args.opts,
-      };
-    };
-
-    const { transformations: extraTransformations, ...restExtra } = extra;
-
     return {
       parent: this,
-      ...restExtra,
-      transformations: [labelTransformation, ...(extraTransformations ?? [])],
+      aliases: [{ parent: pulumi.rootStackResource }],
+      ...extra,
+    };
+  }
+
+  /**
+   * Child options for a resource that was v1-PARENTED to another resource and
+   * relies on parent-alias INHERITANCE for in-place migration (e.g. SecretVersion
+   * under Secret, the NEG under the Cloud Run Service, every project child under
+   * the Project).
+   *
+   * Parents the child to `parent` with NO explicit alias of its own: Pulumi
+   * reconstructs the child's old URN from the (root-aliased) parent's alias.
+   * Confirmed against real previews in redesign-notes §9/§9c — no explicit child
+   * alias needed.
+   *
+   * @param parent The resource the child was parented to in v1.
+   * @param extra  Additional child options merged in.
+   */
+  protected nestedChildOpts(
+    parent: pulumi.Resource,
+    extra: pulumi.CustomResourceOptions = {}
+  ): pulumi.CustomResourceOptions {
+    return {
+      parent,
+      ...extra,
     };
   }
 }

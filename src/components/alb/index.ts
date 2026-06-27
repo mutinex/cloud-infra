@@ -313,31 +313,16 @@ export class CloudInfraAlb extends CloudInfraComponent {
    *  `{ parent: pulumi.rootStackResource }` (the type-correct equivalent of
    *  `noParent` on this pinned Pulumi version).
    *
-   *  Two flavours:
-   *   - `labeledChildOpts()` → base `childOpts(...)` = parent + the org
-   *     label-stamping transformation. Used ONLY for children whose GCP schema
-   *     HAS a `labels` field: Address / GlobalAddress and
-   *     ForwardingRule / GlobalForwardingRule.
-   *   - `plainChildOpts()`   → parent + alias, NO label transformation. Used for
-   *     every label-LESS child: URLMap / RegionUrlMap, the Target(Http|Https)
-   *     proxy variants, and SSLCertificate / RegionSslCertificate. Injecting a
-   *     `labels` key onto these is a HARD provider error, so they must NOT go
-   *     through the stamping transformation.
+   *  ALL ALB children were created FLAT (root) in v1, so EVERY one uses the
+   *  base `childOpts()` (parent under `this` + a root-stack alias). The label
+   *  distinction is orthogonal and lives in the ARGS now (v2 per-child opt-in):
+   *   - Label-SUPPORTING children (Address / GlobalAddress and
+   *     ForwardingRule / GlobalForwardingRule) get `this.orgLabels` threaded
+   *     into their args via the resolver `labels` param.
+   *   - Label-LESS children (URLMap / RegionUrlMap, the Target(Http|Https) proxy
+   *     variants, SSLCertificate / RegionSslCertificate) get NO labels —
+   *     injecting a `labels` key onto these is a HARD provider error.
    */
-
-  /** Root-stack alias shared by every child (all were created flat in v1). */
-  private static readonly ROOT_ALIAS: pulumi.CustomResourceOptions['aliases'] =
-    [{ parent: pulumi.rootStackResource }];
-
-  /** Opts for label-SUPPORTING children: parent + alias + org label stamping. */
-  private labeledChildOpts(): pulumi.CustomResourceOptions {
-    return this.childOpts({ aliases: CloudInfraAlb.ROOT_ALIAS });
-  }
-
-  /** Opts for label-LESS children: parent + alias, but NO label transform. */
-  private plainChildOpts(): pulumi.CustomResourceOptions {
-    return { parent: this, aliases: CloudInfraAlb.ROOT_ALIAS };
-  }
 
   /**
    * Creates global load balancer resources.
@@ -363,8 +348,10 @@ export class CloudInfraAlb extends CloudInfraComponent {
         input: addressInput,
         meta: this.meta,
         resourceName,
-        // GlobalAddress supports `labels` → label-stamping child opts.
-        opts: this.labeledChildOpts(),
+        // FLAT (root) in v1 → childOpts() parents + root-aliases.
+        opts: this.childOpts(),
+        // GlobalAddress supports `labels` → merge the org floor into its args.
+        labels: { ...this.orgLabels },
       });
     this.globalAddress = createdAddress;
 
@@ -416,8 +403,10 @@ export class CloudInfraAlb extends CloudInfraComponent {
         meta: this.meta,
         resourceName,
         region: this.region,
-        // Address supports `labels` → label-stamping child opts.
-        opts: this.labeledChildOpts(),
+        // FLAT (root) in v1 → childOpts() parents + root-aliases.
+        opts: this.childOpts(),
+        // Address supports `labels` → merge the org floor into its args.
+        labels: { ...this.orgLabels },
       });
     this.regionalAddress = createdAddress as gcp.compute.Address | undefined;
 
@@ -489,7 +478,7 @@ export class CloudInfraAlb extends CloudInfraComponent {
       input: targetConfig.urlMap,
       meta: this.meta,
       resourceName,
-      opts: this.plainChildOpts(),
+      opts: this.childOpts(),
     });
 
     if (urlMapResult.resource) {
@@ -503,7 +492,7 @@ export class CloudInfraAlb extends CloudInfraComponent {
       meta: this.meta,
       resourceName,
       urlMap: urlMapResult.value,
-      opts: this.plainChildOpts(),
+      opts: this.childOpts(),
     });
 
     this.globalProxy = proxyResult.proxy as
@@ -541,7 +530,7 @@ export class CloudInfraAlb extends CloudInfraComponent {
       resourceName,
       region: this.region,
       loadBalancingScheme,
-      opts: this.plainChildOpts(),
+      opts: this.childOpts(),
     });
 
     if (urlMapResult.resource) {
@@ -556,7 +545,7 @@ export class CloudInfraAlb extends CloudInfraComponent {
       resourceName,
       urlMap: urlMapResult.value,
       region: this.region,
-      opts: this.plainChildOpts(),
+      opts: this.childOpts(),
     });
 
     this.regionalProxy = proxyResult.proxy as
@@ -585,7 +574,8 @@ export class CloudInfraAlb extends CloudInfraComponent {
     void ipAddress;
 
     // Create global forwarding rule - pass config without target/ipAddress.
-    // GlobalForwardingRule supports `labels` → label-stamping child opts.
+    // FLAT (root) in v1 → childOpts(). GlobalForwardingRule supports `labels`
+    // → merge the org floor into its args.
     const { resource } = createForwardingRule({
       meta: this.meta,
       config: forwardingRuleConfig as Record<string, unknown>,
@@ -593,7 +583,8 @@ export class CloudInfraAlb extends CloudInfraComponent {
       target: targetProxyReference,
       resourceName,
       region: undefined, // Global resources don't have region
-      opts: this.labeledChildOpts(),
+      opts: this.childOpts(),
+      labels: { ...this.orgLabels },
     });
 
     return resource as gcp.compute.GlobalForwardingRule;
@@ -617,7 +608,8 @@ export class CloudInfraAlb extends CloudInfraComponent {
     void ipAddress;
 
     // Create regional forwarding rule - pass config without target/ipAddress.
-    // ForwardingRule supports `labels` → label-stamping child opts.
+    // FLAT (root) in v1 → childOpts(). ForwardingRule supports `labels` → merge
+    // the org floor into its args.
     const { resource } = createForwardingRule({
       meta: this.meta,
       config: forwardingRuleConfig as Record<string, unknown>,
@@ -625,7 +617,8 @@ export class CloudInfraAlb extends CloudInfraComponent {
       target: targetProxyReference,
       resourceName,
       region: this.region,
-      opts: this.labeledChildOpts(),
+      opts: this.childOpts(),
+      labels: { ...this.orgLabels },
     });
 
     return resource as gcp.compute.ForwardingRule;

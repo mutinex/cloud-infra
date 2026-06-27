@@ -32,11 +32,19 @@ interface CreateGlobalAddressParams {
   resourceName: string;
   /**
    * Optional Pulumi resource options. When the ALB component creates this
-   * child it threads its `childOpts({...})` here so the address is parented
+   * child it threads its `childOpts()` here so the address is parented
    * under the component (and carries the root-stack alias for non-destructive
    * migration). Omitted in direct/unit usage → behaves as before.
    */
   opts?: pulumi.CustomResourceOptions;
+  /**
+   * Org labels to MERGE into the address args. GlobalAddress supports `labels`;
+   * the ALB threads `this.orgLabels` here so the label floor lives in the
+   * child's own args (the v2 per-child opt-in model). Caller-supplied
+   * `config.labels` win over the floor. Omitted in direct/unit usage → no
+   * labels injected.
+   */
+  labels?: pulumi.Input<Record<string, pulumi.Input<string>>>;
 }
 
 /**
@@ -53,6 +61,8 @@ interface CreateRegionalAddressParams {
   region: string;
   /** Optional Pulumi resource options threaded from the ALB component. */
   opts?: pulumi.CustomResourceOptions;
+  /** Org labels to merge into the args (see {@link CreateGlobalAddressParams}). */
+  labels?: pulumi.Input<Record<string, pulumi.Input<string>>>;
 }
 
 /**
@@ -73,6 +83,8 @@ export interface ResolveAddressParams {
   region?: string;
   /** Optional Pulumi resource options threaded from the ALB component. */
   opts?: pulumi.CustomResourceOptions;
+  /** Org labels to merge into the args (see {@link CreateGlobalAddressParams}). */
+  labels?: pulumi.Input<Record<string, pulumi.Input<string>>>;
 }
 
 /**
@@ -127,12 +139,15 @@ export function createGlobalAddress(params: CreateGlobalAddressParams): {
   address: gcp.compute.GlobalAddress;
 } {
   return withErrorHandling('global address', params.resourceName, () => {
-    const { config, resourceName, meta, opts } = params;
+    const { config, resourceName, meta, opts, labels } = params;
 
     const addressArgs: gcp.compute.GlobalAddressArgs = {
       ...config, // User config first
       addressType: config.addressType ?? 'EXTERNAL',
       project: config.project ?? meta.getGcpProject(),
+      // Merge the org label floor into the child's own args (caller wins).
+      // Only when labels were threaded from the component.
+      ...(labels ? { labels: { ...labels, ...(config.labels ?? {}) } } : {}),
     };
 
     // Pass `opts` only when supplied so direct callers still see a 2-arg
@@ -161,13 +176,16 @@ export function createRegionalAddress(params: CreateRegionalAddressParams): {
   address: gcp.compute.Address;
 } {
   return withErrorHandling('regional address', params.resourceName, () => {
-    const { config, resourceName, region, meta, opts } = params;
+    const { config, resourceName, region, meta, opts, labels } = params;
 
     const addressArgs: gcp.compute.AddressArgs = {
       ...config, // User config first
       addressType: config.addressType ?? 'EXTERNAL',
       project: config.project ?? meta.getGcpProject(),
       region: region,
+      // Merge the org label floor into the child's own args (caller wins).
+      // Only when labels were threaded from the component.
+      ...(labels ? { labels: { ...labels, ...(config.labels ?? {}) } } : {}),
     };
 
     const address = new gcp.compute.Address(
@@ -220,7 +238,7 @@ function resolveAddressCommon(
 export function resolveGlobalAddress(
   params: ResolveAddressParams
 ): ResolveAddressResult {
-  const { input, meta, resourceName, opts } = params;
+  const { input, meta, resourceName, opts, labels } = params;
 
   return resolveAddressCommon(params, () =>
     createGlobalAddress({
@@ -228,6 +246,7 @@ export function resolveGlobalAddress(
       config: (input as gcp.compute.GlobalAddressArgs) || {},
       resourceName,
       opts,
+      labels,
     })
   );
 }
@@ -247,7 +266,7 @@ export function resolveGlobalAddress(
 export function resolveRegionalAddress(
   params: ResolveAddressParams
 ): ResolveAddressResult {
-  const { input, meta, resourceName, region, opts } = params;
+  const { input, meta, resourceName, region, opts, labels } = params;
 
   if (!region) {
     throw new ValidationError(
@@ -264,6 +283,7 @@ export function resolveRegionalAddress(
       resourceName,
       region,
       opts,
+      labels,
     })
   );
 }

@@ -225,13 +225,14 @@ export class CloudInfraRole extends CloudInfraComponent {
       };
 
       // Custom-role moves UNDER this component but was FLAT (root) in v1 →
-      // alias back to its old root-level URN for a non-destructive migration.
-      // `gcp.organizations.IAMCustomRole` has NO `labels` field, so use plain
-      // parent opts (NOT the label-stamping `childOpts()`).
-      this.role = new gcp.organizations.IAMCustomRole(name, args, {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      });
+      // childOpts() aliases it back to its old root-level URN for a
+      // non-destructive migration. `gcp.organizations.IAMCustomRole` has NO
+      // `labels` field → args are NOT passed through withLabels.
+      this.role = new gcp.organizations.IAMCustomRole(
+        name,
+        args,
+        this.childOpts()
+      );
       this.fullName = `organizations/${orgIdResolved}/roles/${roleId}`;
     } else {
       const args: gcp.projects.IAMCustomRoleArgs = {
@@ -244,12 +245,9 @@ export class CloudInfraRole extends CloudInfraComponent {
         }),
       };
 
-      // Same migration treatment as the org-level branch: parent under the
-      // component, alias back to the old flat URN, no labels.
-      this.role = new gcp.projects.IAMCustomRole(name, args, {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      });
+      // Same migration treatment as the org-level branch: childOpts() parents
+      // under the component and aliases back to the old flat URN; no labels.
+      this.role = new gcp.projects.IAMCustomRole(name, args, this.childOpts());
       this.fullName =
         pulumi.interpolate`projects/${projectId}/roles/${roleId}` as unknown as string;
     }

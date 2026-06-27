@@ -222,15 +222,15 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
       ...this.getLocationConfig(),
     };
 
-    // certificatemanager.DnsAuthorization HAS a `labels` input → stamp the org
-    // label floor via childOpts(). FLAT (root) in v1 → alias back to its old
-    // root URN. PRESERVE the existing deleteBeforeReplace.
+    // certificatemanager.DnsAuthorization HAS a `labels` input → merge the org
+    // label floor into its args via withLabels. FLAT (root) in v1 → childOpts()
+    // aliases it back to its old root URN. PRESERVE the existing
+    // deleteBeforeReplace.
     return new gcp.certificatemanager.DnsAuthorization(
       authorizationName,
-      authorizationArgs,
+      this.withLabels(authorizationArgs),
       this.childOpts({
         deleteBeforeReplace: true,
-        aliases: [{ parent: pulumi.rootStackResource }],
       })
     );
   }
@@ -260,9 +260,9 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
   ): cloudflare.Record {
     const recordName = `${this.resourceName}-${this.sanitizeResourceName(domain)}`;
 
-    // cloudflare.DnsRecord has NO `labels` input → use PLAIN parent opts (NOT
-    // childOpts(), which would inject an unsupported `labels` key and hard-error).
-    // FLAT (root) in v1 → alias back to its old root URN.
+    // cloudflare.DnsRecord has NO `labels` input → args are NOT passed through
+    // withLabels (it would inject an unsupported `labels` key and hard-error).
+    // FLAT (root) in v1 → childOpts() aliases it back to its old root URN.
     return new cloudflare.DnsRecord(
       recordName,
       {
@@ -277,10 +277,7 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
         ttl: 1, // Minimum TTL for validation records
         proxied: false,
       },
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
   }
 
@@ -320,15 +317,14 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
       ...this.getLocationConfig(),
     };
 
-    // certificatemanager.Certificate HAS a `labels` input → stamp via childOpts.
-    // FLAT (root) in v1 → alias back to its old root URN. Child name suffix
-    // `-${cert.name}` preserved verbatim (F2).
+    // certificatemanager.Certificate HAS a `labels` input → merge org labels
+    // into its args via withLabels. FLAT (root) in v1 → childOpts() aliases it
+    // back to its old root URN. Child name suffix `-${cert.name}` preserved
+    // verbatim (F2).
     return new gcp.certificatemanager.Certificate(
       `${this.resourceName}-${cert.name}`,
-      certificateArgs,
-      this.childOpts({
-        aliases: [{ parent: pulumi.rootStackResource }],
-      })
+      this.withLabels(certificateArgs),
+      this.childOpts()
     );
   }
 
@@ -359,17 +355,17 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
       operation: 'createCertificateMap',
     });
 
-    // certificatemanager.CertificateMap HAS a `labels` input → stamp via
-    // childOpts. FLAT (root) in v1 → alias back to its old root URN. PRESERVE
-    // the existing deleteBeforeReplace.
+    // certificatemanager.CertificateMap HAS a `labels` input → merge org labels
+    // into its args via withLabels. FLAT (root) in v1 → childOpts() aliases it
+    // back to its old root URN. PRESERVE the existing deleteBeforeReplace.
+    const certificateMapArgs: gcp.certificatemanager.CertificateMapArgs = {
+      project: this.config.project ?? this.meta.getGcpProject(),
+    };
     this.certificateMap = new gcp.certificatemanager.CertificateMap(
       this.resourceName,
-      {
-        project: this.config.project ?? this.meta.getGcpProject(),
-      },
+      this.withLabels(certificateMapArgs),
       this.childOpts({
         deleteBeforeReplace: true,
-        aliases: [{ parent: pulumi.rootStackResource }],
       })
     );
   }
@@ -420,21 +416,21 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
 
     const entryName = `${this.resourceName}-${this.sanitizeResourceName(hostname)}`;
 
-    // certificatemanager.CertificateMapEntry HAS a `labels` input → stamp via
-    // childOpts. FLAT (root) in v1 → alias back to its old root URN. PRESERVE
-    // the existing dependsOn. Child name suffix `-${hostname}` (sanitized)
-    // preserved verbatim (F2).
+    // certificatemanager.CertificateMapEntry HAS a `labels` input → merge org
+    // labels into its args via withLabels. FLAT (root) in v1 → childOpts()
+    // aliases it back to its old root URN. PRESERVE the existing dependsOn.
+    // Child name suffix `-${hostname}` (sanitized) preserved verbatim (F2).
+    const entryArgs: gcp.certificatemanager.CertificateMapEntryArgs = {
+      map: this.certificateMap.name,
+      certificates: [certificate.id],
+      hostname: hostname,
+      project: this.config.project ?? this.meta.getGcpProject(),
+    };
     const entry = new gcp.certificatemanager.CertificateMapEntry(
       entryName,
-      {
-        map: this.certificateMap.name,
-        certificates: [certificate.id],
-        hostname: hostname,
-        project: this.config.project ?? this.meta.getGcpProject(),
-      },
+      this.withLabels(entryArgs),
       this.childOpts({
         dependsOn: [certificate, this.certificateMap],
-        aliases: [{ parent: pulumi.rootStackResource }],
       })
     );
 

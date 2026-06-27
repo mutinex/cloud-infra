@@ -94,15 +94,17 @@ export class CloudInfraFolder extends CloudInfraComponent {
     const protectFlag =
       folderArgsRaw.deletionProtection === false ? false : true;
 
-    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
-    // gcp.organizations.Folder has NO labels → plain opts (not childOpts).
-    // Preserve protect + replaceOnChanges exactly.
-    this.folder = new gcp.organizations.Folder(componentName, folderArgs, {
-      protect: protectFlag,
-      replaceOnChanges: ['parent'],
-      parent: this,
-      aliases: [{ parent: pulumi.rootStackResource }],
-    });
+    // v1: root-level (no parent) → childOpts() aliases back to root for
+    // IN-PLACE migration. gcp.organizations.Folder has NO labels → args are NOT
+    // passed through withLabels. Preserve protect + replaceOnChanges exactly.
+    this.folder = new gcp.organizations.Folder(
+      componentName,
+      folderArgs,
+      this.childOpts({
+        protect: protectFlag,
+        replaceOnChanges: ['parent'],
+      })
+    );
 
     if (cloudInfraTags) {
       (cloudInfraTags || []).forEach(tagValueInput => {

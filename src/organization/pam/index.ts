@@ -182,15 +182,13 @@ export class CloudInfraEntitlement extends CloudInfraComponent {
 
     const componentName = meta.getName();
 
-    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
-    // gcp.privilegedaccessmanager.Entitlement has NO labels → plain opts.
+    // v1: root-level (no parent) → childOpts() aliases back to root for
+    // IN-PLACE migration. gcp.privilegedaccessmanager.Entitlement has NO labels
+    // → args are NOT passed through withLabels.
     this.entitlement = new gcp.privilegedaccessmanager.Entitlement(
       componentName,
       args,
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
 
     this.registerOutputs({

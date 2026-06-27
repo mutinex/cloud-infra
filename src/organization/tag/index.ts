@@ -118,8 +118,9 @@ export class CloudInfraTag extends CloudInfraComponent {
   ): gcp.tags.TagKey {
     const { parent, description } = config;
 
-    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
-    // gcp.tags.TagKey has NO labels → plain opts (not childOpts).
+    // v1: root-level (no parent) → childOpts() aliases back to root for
+    // IN-PLACE migration. gcp.tags.TagKey has NO labels → args are NOT passed
+    // through withLabels.
     return new gcp.tags.TagKey(
       resourceName,
       {
@@ -127,10 +128,7 @@ export class CloudInfraTag extends CloudInfraComponent {
         shortName: keyShortName,
         description,
       },
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
   }
 
@@ -143,8 +141,9 @@ export class CloudInfraTag extends CloudInfraComponent {
     const formattedParent = pulumi.interpolate`tagKeys/${parent}`;
 
     // F1/F2: first-arg logical name stays the RAW `shortName` (NOT meta-derived).
-    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
-    // gcp.tags.TagValue has NO labels → plain opts (not childOpts).
+    // v1: root-level (no parent) → childOpts() aliases back to root for
+    // IN-PLACE migration. gcp.tags.TagValue has NO labels → args are NOT passed
+    // through withLabels.
     return new gcp.tags.TagValue(
       shortName,
       {
@@ -152,10 +151,7 @@ export class CloudInfraTag extends CloudInfraComponent {
         shortName,
         description,
       },
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
   }
 

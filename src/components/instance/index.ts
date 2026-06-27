@@ -83,7 +83,7 @@ export class CloudInfraComputeInstance extends CloudInfraComponent {
     }
 
     // Register the component node. The Instance child parents under `this` and
-    // inherits the label-stamping transformation.
+    // gets the org labels merged into its args via `withLabels()`.
     super(
       COMPUTE_INSTANCE_TYPE,
       resourceName,
@@ -129,16 +129,13 @@ export class CloudInfraComputeInstance extends CloudInfraComponent {
       zone,
     };
 
-    // v1 created the Instance FLAT (no parent, at the stack root). It now moves
-    // UNDER this component; alias it back to its old root-level URN so it
-    // updates in place rather than being replaced. gcp.compute.Instance
-    // supports `labels`, so use childOpts() (label stamping applies).
+    // v1 created the Instance FLAT (stack root); childOpts() aliases it back to
+    // its old root-level URN so it updates in place rather than being replaced.
+    // gcp.compute.Instance supports `labels` → merge org labels into its args.
     this.instance = new gcp.compute.Instance(
       resourceName,
-      instanceArgs,
-      this.childOpts({
-        aliases: [{ parent: pulumi.rootStackResource }],
-      })
+      this.withLabels(instanceArgs),
+      this.childOpts()
     );
 
     this.registerOutputs({

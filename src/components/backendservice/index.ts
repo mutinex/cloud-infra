@@ -22,8 +22,7 @@ import { ValidationError } from '../../core/errors';
 import { CloudInfraComponent } from '../../core/component';
 
 /** Pulumi type token for the backend-service component. */
-export const BACKEND_SERVICE_TYPE =
-  'cloud-infra:backendservice:BackendService';
+export const BACKEND_SERVICE_TYPE = 'cloud-infra:backendservice:BackendService';
 
 const HealthCheckSchema = z
   .object({
@@ -177,15 +176,15 @@ export class CloudInfraBackendService extends CloudInfraComponent {
         rest as Partial<gcp.compute.HealthCheckArgs>
       );
 
-      // v1 created the HealthCheck FLAT (no parent, at the stack root). It now
-      // moves UNDER this component; alias it back to its old root-level URN so
-      // it updates in place rather than being replaced. gcp.compute.HealthCheck
-      // has NO `labels` field, so use plain `{ parent: this }` (NOT childOpts) —
-      // injecting labels onto it would hard-error.
-      createdHealthCheck = new gcp.compute.HealthCheck(resourceName, hcArgs, {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      });
+      // v1 created the HealthCheck FLAT (stack root); childOpts() aliases it
+      // back to its old root-level URN so it updates in place rather than being
+      // replaced. gcp.compute.HealthCheck has NO `labels` field → args are NOT
+      // passed through withLabels (injecting labels would hard-error).
+      createdHealthCheck = new gcp.compute.HealthCheck(
+        resourceName,
+        hcArgs,
+        this.childOpts()
+      );
 
       const bsConfigTyped = bsRawConfig as Record<string, unknown>;
       if (!bsConfigTyped.healthChecks) {
@@ -206,15 +205,13 @@ export class CloudInfraBackendService extends CloudInfraComponent {
 
       // v1 created the BackendService FLAT (no parent). The HealthCheck is a
       // SIBLING (referenced via `healthChecks: [hc.id]`, not a Pulumi parent),
-      // so this child aliases back to root. gcp.compute.BackendService has NO
-      // `labels` field, so use plain `{ parent: this }` (NOT childOpts).
+      // so childOpts() aliases this child back to root. gcp.compute.
+      // BackendService has NO `labels` field → args are NOT passed through
+      // withLabels.
       this.backendService = new gcp.compute.BackendService(
         resourceName,
         bsArgs,
-        {
-          parent: this,
-          aliases: [{ parent: pulumi.rootStackResource }],
-        }
+        this.childOpts()
       );
     } else {
       const bsArgs = withDefaults<gcp.compute.RegionBackendServiceArgs>(
@@ -228,16 +225,13 @@ export class CloudInfraBackendService extends CloudInfraComponent {
       );
 
       // Same as the global branch: regional backend service moves under this
-      // component, aliased back to its old root URN. gcp.compute.
-      // RegionBackendService has NO `labels` field, so use plain
-      // `{ parent: this }` (NOT childOpts).
+      // component, childOpts() aliases it back to its old root URN. gcp.compute.
+      // RegionBackendService has NO `labels` field → args are NOT passed through
+      // withLabels.
       this.backendService = new gcp.compute.RegionBackendService(
         resourceName,
         bsArgs,
-        {
-          parent: this,
-          aliases: [{ parent: pulumi.rootStackResource }],
-        }
+        this.childOpts()
       );
     }
 

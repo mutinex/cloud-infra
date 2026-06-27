@@ -36,11 +36,17 @@ interface CreateGlobalForwardingRuleParams {
   resourceName: string;
   /**
    * Optional Pulumi resource options threaded from the ALB component so the
-   * forwarding rule is parented under the component (with a root-stack alias).
-   * GlobalForwardingRule DOES support `labels`, so the component threads its
-   * label-stamping `childOpts(...)` here. Omitted in direct/unit usage.
+   * forwarding rule is parented under the component (with a root-stack alias
+   * via `childOpts()`). Omitted in direct/unit usage.
    */
   opts?: pulumi.CustomResourceOptions;
+  /**
+   * Org labels to MERGE into the forwarding-rule args. GlobalForwardingRule
+   * supports `labels`; the ALB threads `this.orgLabels` here so the label floor
+   * lives in the child's own args (the v2 per-child opt-in model). Omitted in
+   * direct/unit usage → no labels injected.
+   */
+  labels?: pulumi.Input<Record<string, pulumi.Input<string>>>;
 }
 
 /**
@@ -61,6 +67,8 @@ interface CreateRegionalForwardingRuleParams {
   region: string;
   /** Optional Pulumi resource options threaded from the ALB component. */
   opts?: pulumi.CustomResourceOptions;
+  /** Org labels to merge into the args (see {@link CreateGlobalForwardingRuleParams}). */
+  labels?: pulumi.Input<Record<string, pulumi.Input<string>>>;
 }
 
 /**
@@ -84,6 +92,8 @@ export interface CreateForwardingRuleParams {
   region?: string;
   /** Optional Pulumi resource options threaded from the ALB component. */
   opts?: pulumi.CustomResourceOptions;
+  /** Org labels to merge into the args (see {@link CreateGlobalForwardingRuleParams}). */
+  labels?: pulumi.Input<Record<string, pulumi.Input<string>>>;
 }
 
 /**
@@ -142,7 +152,8 @@ export function createGlobalForwardingRule(
     'global forwarding rule',
     params.resourceName,
     () => {
-      const { config, ipAddress, target, resourceName, meta, opts } = params;
+      const { config, ipAddress, target, resourceName, meta, opts, labels } =
+        params;
 
       const forwardingRuleArgs: gcp.compute.GlobalForwardingRuleArgs = {
         ...config, // User config first
@@ -150,6 +161,9 @@ export function createGlobalForwardingRule(
         project: config.project ?? meta.getGcpProject(),
         ipAddress: ipAddress,
         target: target,
+        // Merge the org label floor into the child's own args (caller wins).
+        // Only when labels were threaded from the component.
+        ...(labels ? { labels: { ...labels, ...(config.labels ?? {}) } } : {}),
       };
 
       // Apply default loadBalancingScheme
@@ -187,8 +201,16 @@ export function createRegionalForwardingRule(
     'regional forwarding rule',
     params.resourceName,
     () => {
-      const { config, ipAddress, target, resourceName, region, meta, opts } =
-        params;
+      const {
+        config,
+        ipAddress,
+        target,
+        resourceName,
+        region,
+        meta,
+        opts,
+        labels,
+      } = params;
 
       const forwardingRuleArgs: gcp.compute.ForwardingRuleArgs = {
         ...config, // User config first
@@ -197,6 +219,9 @@ export function createRegionalForwardingRule(
         region: region,
         ipAddress: ipAddress,
         target: target,
+        // Merge the org label floor into the child's own args (caller wins).
+        // Only when labels were threaded from the component.
+        ...(labels ? { labels: { ...labels, ...(config.labels ?? {}) } } : {}),
       };
 
       // Apply default loadBalancingScheme
@@ -228,8 +253,16 @@ export function createRegionalForwardingRule(
 export function createForwardingRule(
   params: CreateForwardingRuleParams
 ): CreateForwardingRuleResult {
-  const { config, meta, resourceName, ipAddress, target, region, opts } =
-    params;
+  const {
+    config,
+    meta,
+    resourceName,
+    ipAddress,
+    target,
+    region,
+    opts,
+    labels,
+  } = params;
 
   if (region) {
     const forwardingRuleConfig: gcp.compute.ForwardingRuleArgs = {
@@ -246,6 +279,7 @@ export function createForwardingRule(
       resourceName,
       region,
       opts,
+      labels,
     });
     return { resource: forwardingRule };
   } else {
@@ -262,6 +296,7 @@ export function createForwardingRule(
       target,
       resourceName,
       opts,
+      labels,
     });
     return { resource: forwardingRule };
   }

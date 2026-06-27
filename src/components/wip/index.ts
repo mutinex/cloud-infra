@@ -90,12 +90,14 @@ export class CloudInfraWIP extends CloudInfraComponent {
 
     const poolArgs = withDefaults(baseArgs, overrides);
 
-    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
-    // gcp.iam.WorkloadIdentityPool has NO labels → plain opts (not childOpts).
-    this.pool = new gcp.iam.WorkloadIdentityPool(resourceName, poolArgs, {
-      parent: this,
-      aliases: [{ parent: pulumi.rootStackResource }],
-    });
+    // v1: root-level (no parent) → childOpts() aliases back to root for
+    // IN-PLACE migration. gcp.iam.WorkloadIdentityPool has NO labels → args are
+    // NOT passed through withLabels.
+    this.pool = new gcp.iam.WorkloadIdentityPool(
+      resourceName,
+      poolArgs,
+      this.childOpts()
+    );
 
     this.registerOutputs({
       pool: this.pool,
@@ -227,15 +229,13 @@ export class CloudInfraWIPProvider extends CloudInfraComponent {
       providerOverrides as Partial<gcp.iam.WorkloadIdentityPoolProviderArgs>
     );
 
-    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
-    // gcp.iam.WorkloadIdentityPoolProvider has NO labels → plain opts.
+    // v1: root-level (no parent) → childOpts() aliases back to root for
+    // IN-PLACE migration. gcp.iam.WorkloadIdentityPoolProvider has NO labels →
+    // args are NOT passed through withLabels.
     this.provider = new gcp.iam.WorkloadIdentityPoolProvider(
       resourceName,
       providerArgs,
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
 
     // Derive poolName from provider.name to ensure it contains the numeric project number.
