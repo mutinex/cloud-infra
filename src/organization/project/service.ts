@@ -15,11 +15,37 @@ import {
   apisNeedingIdentities,
 } from './common';
 import { ServiceUsageApiBootstrap } from './bootstrap';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Service Project component. */
 export const CLOUD_INFRA_SERVICE_PROJECT_TYPE =
   'cloud-infra:project:CloudInfraServiceProject';
+
+/**
+ * Name-first construction args for `CloudInfraServiceProject` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the project config
+ * ({@link CloudInfraProjectConfig}) into a single args object, so a service
+ * project can be built as
+ * `new CloudInfraServiceProject("app", { domain: "au", vpcHostProject: "..." })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the project config — every deep child name (incl. the
+ * `:`-delimited API/service names, the Shared-VPC service binding, the delay
+ * dynamic provider, the IAM members) and `dependsOn` wiring is derived exactly
+ * as the meta-first path.
+ *
+ * `gcp.organizations.Project` has no `location`, so {@link NamingArgs.location}
+ * (which drives only the generated name) cannot collide with the config arm.
+ */
+export type CloudInfraServiceProjectArgs = NamingArgs &
+  CloudInfraProjectConfig;
 
 /**
  * CloudInfra Organization – Service Project
@@ -58,7 +84,24 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
   private readonly componentName: string;
 
   /**
-   * Create a new CloudInfra Service Project.
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the project config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * Every deep child (project, bootstrap + delay dynamic providers, the
+   * `:`-delimited API services, Shared-VPC service binding, IAM members) keeps
+   * its name, parent, alias, labels and `protect`/`dependsOn` wiring exactly as
+   * the meta-first path — only meta acquisition is rerouted.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraServiceProjectArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraServiceProject(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
    *
    * @param meta - Metadata for naming and configuration
    * @param config - Service project configuration including VPC host project
@@ -67,7 +110,28 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
     meta: CloudInfraMeta,
     config: CloudInfraProjectConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraServiceProjectArgs | CloudInfraProjectConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // project config passed straight through (consumed UNCHANGED below — every
+    // child name, dynamic provider, dependsOn is derived from it).
+    let meta: CloudInfraMeta;
+    let config: CloudInfraProjectConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraServiceProjectArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraProjectConfig;
+    }
+
     // ── Pre-super computation ──────────────────────────────────────────────
     // `super()` must be the first statement, so the name/validation logic that
     // previously ran at the top of the body is hoisted here WITHOUT changing
