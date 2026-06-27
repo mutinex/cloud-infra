@@ -157,3 +157,18 @@ Ported representative dataos call sites (CloudRunService, Bucket, Secret, Databa
 1. `gcpProject` (meta-first) has NO NamingArgs slot → map to the config `project:` field (resolves identically when project == meta's gcp fallback).
 2. **`location` foot-gun:** name-first FUSES naming-location and deploy-region (config `location` is `Omit`ted on the name-first arm). A consumer who set a deploy region via `config.location` while leaving the meta location-less MUST DROP `location` when porting — passing the same value renames (region-suffix) and REPLACES the resource. Codemod must special-case; consider a name-first lint. Escape hatch (different deploy region vs naming location) remains only on the @deprecated meta-first overload.
 3. Bulk classes (account-bulk, bucket-bulk) have NO name-first overload — DX2 handles them. Killing bulk is STATE-SENSITIVE: bulk feeding access-matrix embeds the map KEY in the IAM binding name (Trap #6) → DX2 must preserve the key→name mapping or IAM bindings rename.
+
+---
+## CONSOLIDATED STATE — v2 @ b017c52 (milestone)
+**MERGED & validated (all preview-only on the `v2` branch; no apply yet):**
+- Phase 1: ComponentResource + uniform labels + non-destructive aliases — zero-replace verified dataos/dev + gcp-org mtx/dev + mtx-org/prd (incl. PROD).
+- Phase 2: name-first construction across ALL components (meta-first @deprecated; arg-identical preview-gated on dataos); `ref.get("name").field` reference API (cross-type scan); flat outputs (dual-emit, nested wire frozen).
+- Phase 3 so far: dead `Config` singleton + LRU removed, deps trimmed to `@pulumi/*`+`zod`; access-matrix dead-code excised (~833 LOC, live IAM path byte-unchanged).
+- Frozen-Contract golden net F1–F4 + ALB tokens guards everything. **493 tests green.**
+
+**REMAINING:**
+- Access-matrix STRUCTURAL collapse (builder registry + 10 builders → one switch; flatten principal factory). STATE-SENSITIVE — rewrites the live IAM dispatch, so the IAM resources must come out byte-identical → REQUIRES a real zero-replace preview gate (golden F3 alone insufficient). Preserve Trap 1 (dedup no-op), Trap 4 (iteration order).
+- DX2 (collapse single/bulk): STATE-SENSITIVE (bulk-key in IAM names, Trap 6) + low marginal value now → RECOMMEND DEFER.
+- Docs/test sprawl: low-risk, low-value.
+
+**THE PENDING REAL-WORLD DECISION (user's call):** everything is PREVIEW-ONLY on `v2`. Shipping = publish v2 + migrate consumers (gcp-organization, monorepo pkgs) via codemod. Codemod sharp-edges already recorded above (location foot-gun; gcpProject→project; bulk-key). No `pulumi apply` has run anywhere.
