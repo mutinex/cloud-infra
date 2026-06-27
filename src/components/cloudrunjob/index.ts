@@ -57,9 +57,9 @@ export class CloudInfraCloudRunJob extends CloudInfraComponent {
   ) {
     const resourceName = meta.getName();
 
-    // Register the component node. The Job child parents under `this` and
-    // inherits the label-stamping transformation. The generated NAME is
-    // unchanged (F1).
+    // Register the component node. The Job child parents under `this` and gets
+    // the org labels merged into its args via `withLabels()`. The generated
+    // NAME is unchanged (F1).
     super(
       CLOUD_RUN_JOB_TYPE,
       resourceName,
@@ -83,16 +83,13 @@ export class CloudInfraCloudRunJob extends CloudInfraComponent {
       location: config.location ?? deriveRegion(meta),
     };
 
-    // v1 created the Job FLAT (no parent, at the stack root). It now moves
-    // UNDER this component; alias it back to its old root-level URN so it
-    // updates in place rather than being replaced. gcp.cloudrunv2.Job supports
-    // `labels`, so use childOpts() (label stamping applies).
+    // v1 created the Job FLAT (stack root); childOpts() aliases it back to its
+    // old root-level URN so it updates in place rather than being replaced.
+    // gcp.cloudrunv2.Job supports `labels` → merge org labels into its args.
     this.job = new gcp.cloudrunv2.Job(
       resourceName,
-      jobArgs,
-      this.childOpts({
-        aliases: [{ parent: pulumi.rootStackResource }],
-      })
+      this.withLabels(jobArgs),
+      this.childOpts()
     );
 
     this.registerOutputs({

@@ -91,12 +91,14 @@ export class CloudInfraDatabase extends CloudInfraComponent {
       project: config.project ?? meta.getGcpProject(), // ALWAYS use meta fallback
     };
 
-    // gcp.sql.Database has NO `labels` field → OMIT label stamping and use
-    // PLAIN opts (NOT childOpts). v1 created it FLAT → alias back to root.
-    this.database = new gcp.sql.Database(resourceName, databaseArgs, {
-      parent: this,
-      aliases: [{ parent: pulumi.rootStackResource }],
-    });
+    // gcp.sql.Database has NO `labels` field → OMIT label stamping (args are
+    // NOT passed through withLabels). v1 created it FLAT → childOpts() aliases
+    // it back to root.
+    this.database = new gcp.sql.Database(
+      resourceName,
+      databaseArgs,
+      this.childOpts()
+    );
 
     this.registerOutputs({
       database: this.database,

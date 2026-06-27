@@ -85,15 +85,18 @@ export class CloudInfraDatabaseUser extends CloudInfraComponent {
       project: config.project ?? meta.getGcpProject(),
     };
 
-    // gcp.sql.User has NO `labels` field → OMIT label stamping and use PLAIN
-    // opts (NOT childOpts). v1 created it FLAT → alias back to root. Keep the
-    // existing `additionalSecretOutputs` so passwords stay secret in state.
-    this.user = new gcp.sql.User(resourceName, userArgs, {
-      parent: this,
-      aliases: [{ parent: pulumi.rootStackResource }],
-      // Make sure password values remain secret in state files.
-      additionalSecretOutputs: ['password'],
-    });
+    // gcp.sql.User has NO `labels` field → OMIT label stamping (args are NOT
+    // passed through withLabels). v1 created it FLAT → childOpts() aliases it
+    // back to root. Keep the existing `additionalSecretOutputs` so passwords
+    // stay secret in state.
+    this.user = new gcp.sql.User(
+      resourceName,
+      userArgs,
+      this.childOpts({
+        // Make sure password values remain secret in state files.
+        additionalSecretOutputs: ['password'],
+      })
+    );
 
     this.registerOutputs({
       user: this.user,

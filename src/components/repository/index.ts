@@ -104,15 +104,13 @@ export class CloudInfraRepository extends CloudInfraComponent {
       repoArgsRaw as Partial<gcp.artifactregistry.RepositoryArgs>
     );
 
-    // v1 created the Repository FLAT (no parent). It now moves under this
-    // component; alias it back to the stack root so it migrates in-place.
-    // artifactregistry.Repository supports `labels` → use childOpts.
+    // v1 created the Repository FLAT (stack root); childOpts() aliases it back
+    // to root so it migrates in-place. artifactregistry.Repository supports
+    // `labels` → merge org labels into its args.
     this.repository = new gcp.artifactregistry.Repository(
       componentName,
-      repoArgs,
-      this.childOpts({
-        aliases: [{ parent: pulumi.rootStackResource }],
-      })
+      this.withLabels(repoArgs),
+      this.childOpts()
     );
 
     this.registerOutputs({

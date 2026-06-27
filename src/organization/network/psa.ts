@@ -91,14 +91,13 @@ export class CloudInfraPSA extends CloudInfraComponent {
    * This component is now a {@link pulumi.ComponentResource} (via
    * {@link CloudInfraComponent}): the GlobalAddress and Connection are created
    * as *children* of the component. Both v1 resources sat at the stack root, so
-   * each child carries an `alias` back to its old root-level URN
-   * (`{ parent: pulumi.rootStackResource }`) for IN-PLACE migration — generated
-   * NAMEs unchanged (F1).
+   * each child uses `childOpts()`, which aliases it back to its old root-level
+   * URN for IN-PLACE migration — generated NAMEs unchanged (F1).
    *
-   * NOTE on labels: neither `gcp.compute.GlobalAddress` nor
-   * `gcp.servicenetworking.Connection` supports a `labels` field, so both
-   * children are parented WITHOUT label stamping (plain `{ parent: this, ... }`,
-   * not `childOpts`). The optional `gcp.Provider` likewise has no labels.
+   * NOTE on labels: the PSA peering-range `gcp.compute.GlobalAddress` was
+   * created UNLABELLED in v1, and `gcp.servicenetworking.Connection` /
+   * `gcp.Provider` have no `labels` field — so NONE of these children pass
+   * their args through `withLabels` (no labels are injected).
    *
    * @param meta The `CloudInfraMeta` instance to derive naming from.
    * @param config The configuration for the PSA connection.
@@ -111,7 +110,13 @@ export class CloudInfraPSA extends CloudInfraComponent {
   ) {
     const resourceName = meta.getName();
 
-    super(PSA_TYPE, resourceName, resourceName, { domain: meta.getDomain() }, opts);
+    super(
+      PSA_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
 
     CloudInfraLogger.info('Initializing Private Service Access component', {
       component: 'network-psa',
@@ -149,16 +154,17 @@ export class CloudInfraPSA extends CloudInfraComponent {
   private createGlobalAddress(
     config: CloudInfraPSAConfig
   ): gcp.compute.GlobalAddress {
-    // v1: root-level → alias back to root. GlobalAddress has NO labels.
+    // v1: root-level → childOpts() aliases back to root. NOTE: the GlobalAddress
+    // TYPE supports `labels` (§9b), but the PSA peering range was created
+    // UNLABELLED in v1 (it used plain opts, never went through the v1 label
+    // transformation). To preserve labels-diff parity we keep it label-less
+    // here (args NOT passed through withLabels). See report flag.
     const range = new gcp.compute.GlobalAddress(
       this.resourceName,
       {
         ...config.reservedPeeringRanges[0],
       },
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
     return range;
   }
@@ -171,27 +177,23 @@ export class CloudInfraPSA extends CloudInfraComponent {
     const { reservedPeeringRanges, ...connectionConfig } = config;
     const projectFromRange = config.reservedPeeringRanges?.[0]?.project;
 
-    // v1: root-level → alias back to root. Preserve dependsOn + provider
-    // wiring exactly. Connection has NO labels.
-    const resourceOptions: pulumi.ComponentResourceOptions = {
-      parent: this,
+    // v1: root-level → childOpts() aliases back to root. Preserve dependsOn +
+    // provider wiring exactly. Connection has NO labels → args are NOT passed
+    // through withLabels.
+    const resourceOptions: pulumi.CustomResourceOptions = this.childOpts({
       dependsOn: [range],
-      aliases: [{ parent: pulumi.rootStackResource }],
-    };
+    });
 
     if (projectFromRange) {
-      // Provider sat at the stack root in v1 (no explicit parent). It now moves
-      // under the component, so per the alias rule it gets a root-alias to keep
-      // its URN identity. gcp.Provider has NO labels.
+      // Provider sat at the stack root in v1 (no explicit parent). childOpts()
+      // gives it a root-alias to keep its URN identity. gcp.Provider has NO
+      // labels → args are NOT passed through withLabels.
       const provider = new gcp.Provider(
         `${this.resourceName}-provider`,
         {
           project: projectFromRange,
         },
-        {
-          parent: this,
-          aliases: [{ parent: pulumi.rootStackResource }],
-        }
+        this.childOpts()
       );
       resourceOptions.provider = provider;
     }

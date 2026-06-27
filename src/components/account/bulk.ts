@@ -102,18 +102,16 @@ export class CloudInfraBulkAccount extends CloudInfraAccountBase {
       const rawConfig = { ...commonConfig, ...perAccountRaw };
 
       // Each SA moves UNDER this component but was created FLAT at the stack
-      // root in v1 → per-item alias back to its old root-level URN for a
-      // non-destructive migration. `gcp.serviceaccount.Account` has NO `labels`
-      // field, so we pass plain parent opts (NOT label-stamping `childOpts()`).
+      // root in v1 → childOpts() gives each its own per-item alias back to its
+      // old root-level URN for a non-destructive migration.
+      // `gcp.serviceaccount.Account` has NO `labels` field → args are NOT passed
+      // through withLabels (injecting labels would hard-error).
       const { account, parsedConfig } = createGcpServiceAccount({
         meta,
         rawConfig,
         inputName,
         pulumiResourceName: generatedName,
-        opts: {
-          parent: this,
-          aliases: [{ parent: pulumi.rootStackResource }],
-        },
+        opts: this.childOpts(),
       });
 
       this.accounts[inputName] = account;

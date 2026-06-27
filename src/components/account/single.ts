@@ -103,19 +103,16 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
     this.inputName = candidateInputName;
 
     // The SA moves UNDER this component (URN gains the component parent path).
-    // It was created FLAT at the stack root in v1, so alias back to its old
-    // root-level URN for a non-destructive (update-in-place) migration.
-    // `gcp.serviceaccount.Account` has NO `labels` field → use plain parent
-    // opts, NOT the label-stamping `childOpts()` (injecting labels hard-errors).
+    // It was created FLAT at the stack root in v1, so childOpts() aliases it
+    // back to its old root-level URN for a non-destructive (update-in-place)
+    // migration. `gcp.serviceaccount.Account` has NO `labels` field → args are
+    // NOT passed through withLabels (injecting labels would hard-error).
     const { account } = createGcpServiceAccount({
       meta: meta,
       rawConfig: config || {},
       inputName: this.inputName,
       pulumiResourceName: componentName,
-      opts: {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      },
+      opts: this.childOpts(),
     });
     this.serviceAccount = account;
 

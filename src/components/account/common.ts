@@ -104,13 +104,13 @@ export interface CreateCloudInfraAccountParams {
   /**
    * Resource options for the underlying `gcp.serviceaccount.Account`.
    *
-   * v2 components pass `{ parent: <component>, aliases: [...] }` so the SA is
-   * created as a child of the ComponentResource while aliasing back to its
-   * old flat (root-level) URN for a non-destructive migration.
+   * v2 components pass `this.childOpts()` so the SA is created as a child of
+   * the ComponentResource while aliasing back to its old flat (root-level) URN
+   * for a non-destructive migration.
    *
    * NB: `gcp.serviceaccount.Account` has NO `labels` input, so the org label
-   * floor is intentionally NOT stamped here (callers therefore pass plain
-   * `{ parent, ... }` rather than the label-stamping `childOpts()`).
+   * floor is intentionally NOT merged here (callers therefore do NOT pass the
+   * args through `withLabels`).
    */
   opts?: pulumi.CustomResourceOptions;
 }

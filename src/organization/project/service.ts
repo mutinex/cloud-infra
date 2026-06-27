@@ -89,8 +89,8 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
     const componentName = meta.getName();
 
     // Register the component node. Children parent under `this`; the Project
-    // (the only label-supporting child) inherits the label-stamping
-    // transformation via `childOpts()`. The generated NAME is unchanged (F1/F2).
+    // (the only label-supporting child) gets the org labels merged into its
+    // args via `withLabels()`. The generated NAME is unchanged (F1/F2).
     super(
       CLOUD_INFRA_SERVICE_PROJECT_TYPE,
       componentName,
@@ -122,16 +122,17 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
       projectArgs.orgId = this.config.orgId;
     }
 
-    // Project moves UNDER this component. v1 created it FLAT (no parent), so it
-    // is aliased back to its old root-level URN to migrate IN-PLACE. It is the
-    // ONLY child here that supports `labels` → use `childOpts()`. `protect` is
-    // preserved exactly.
+    // Project moves UNDER this component. v1 created it FLAT (no parent), so
+    // childOpts() aliases it back to its old root-level URN to migrate IN-PLACE.
+    // It is the ONLY child here that supports `labels` → merge the org floor
+    // into its args via withLabels. `protect` is preserved exactly. Its deep
+    // children parent under it (nestedChildOpts) and migrate via parent-alias
+    // inheritance (§9c).
     this.project = new gcp.organizations.Project(
       this.componentName,
-      projectArgs,
+      this.withLabels(projectArgs),
       this.childOpts({
         protect: this.config.deletionPolicy === 'PREVENT',
-        aliases: [{ parent: pulumi.rootStackResource }],
       })
     );
 
@@ -179,7 +180,7 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
     const serviceUsageApiBootstrap = new ServiceUsageApiBootstrap(
       `${this.componentName}-bootstrap`,
       { projectId: this.project.projectId },
-      { parent: this.project }
+      this.nestedChildOpts(this.project)
     );
     const gcpService = new gcp.projects.Service(
       `${this.componentName}:serviceusage-googleapis-com`,
@@ -188,7 +189,9 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
         service: 'serviceusage.googleapis.com',
         disableOnDestroy: false,
       },
-      { parent: this.project, dependsOn: [serviceUsageApiBootstrap] }
+      this.nestedChildOpts(this.project, {
+        dependsOn: [serviceUsageApiBootstrap],
+      })
     );
     return this.enableApiServices(
       this.componentName,
@@ -229,10 +232,9 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
         hostProject: this.config.vpcHostProject!,
         serviceProject: this.project.projectId,
       },
-      {
-        parent: this.project,
+      this.nestedChildOpts(this.project, {
         dependsOn: enabledServicesRes ? [enabledServicesRes] : [],
-      }
+      })
     );
 
     // Handle IAM for service networking identity if it was created
@@ -244,10 +246,9 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
       const serviceIdentityDelay = new DelayResource(
         `${this.componentName}:service-identity-delay`,
         3000,
-        {
-          parent: this.project,
+        this.nestedChildOpts(this.project, {
           dependsOn: [serviceNetworkingIdentity],
-        }
+        })
       );
 
       new gcp.projects.IAMMember(
@@ -257,10 +258,9 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
           role: 'roles/compute.networkUser',
           member: pulumi.interpolate`serviceAccount:${serviceNetworkingIdentity.email}`,
         },
-        {
-          parent: this.project,
+        this.nestedChildOpts(this.project, {
           dependsOn: [serviceIdentityDelay],
-        }
+        })
       );
 
       // Handle IAM for Cloud Run identity if it was created
@@ -274,10 +274,9 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
             role: 'roles/vpcaccess.user',
             member: pulumi.interpolate`serviceAccount:${cloudRunIdentity.email}`,
           },
-          {
-            parent: this.project,
+          this.nestedChildOpts(this.project, {
             dependsOn: [serviceIdentityDelay],
-          }
+          })
         );
       }
 
@@ -288,7 +287,9 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
           role: 'roles/servicenetworking.serviceAgent',
           member: pulumi.interpolate`serviceAccount:${serviceNetworkingIdentity.email}`,
         },
-        { parent: this.project, dependsOn: [serviceIdentityDelay] }
+        this.nestedChildOpts(this.project, {
+          dependsOn: [serviceIdentityDelay],
+        })
       );
     }
   }
@@ -402,7 +403,7 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
           service: svc,
           disableOnDestroy: true,
         },
-        { parent: this.project, dependsOn: enabledServices }
+        this.nestedChildOpts(this.project, { dependsOn: enabledServices })
       );
 
       if (svc === 'compute.googleapis.com') enabledServicesRes = svcRes;

@@ -36,11 +36,13 @@ export const CLOUD_RUN_SERVICE_TYPE =
  *
  * This component is now a {@link pulumi.ComponentResource} (via
  * {@link CloudInfraComponent}): the Service and the NEG are created as
- * *children* of the component so they appear under one logical node, and org
- * labels are stamped uniformly on BOTH children via the base `childOpts()`
- * transformation (closing the v1 bug where the NEG silently missed labels). The
- * children carry `aliases` so an existing v1 deployment migrates IN-PLACE (no
- * destroy/recreate) — the generated NAME is kept byte-identical (Frozen
+ * *children* of the component so they appear under one logical node. Org labels
+ * are merged into the label-supporting Service's args via `withLabels()`; the
+ * serverless NEG has no `labels` field so it is left unlabelled (no longer the
+ * v1 silent-miss bug — labels are now an explicit per-child opt-in). The Service
+ * uses `childOpts()` (root-alias) and the NEG `nestedChildOpts(service)`, so an
+ * existing v1 deployment migrates IN-PLACE (no destroy/recreate) — the generated
+ * NAME is kept byte-identical (Frozen
  * Contract F1) and only the URN parent path changes.
  *
  * The public surface is UNCHANGED from v1: same `constructor(meta, config)`
@@ -69,9 +71,10 @@ export class CloudInfraCloudRunService extends CloudInfraComponent {
   ) {
     const resourceName = meta.getName();
 
-    // Register the component node. Children parent under `this` and inherit the
-    // label-stamping transformation. `domain` drives the `domain` label only;
-    // the generated NAME below is unchanged (F1).
+    // Register the component node. Children parent under `this`; the
+    // label-supporting Service gets the org labels merged into its args via
+    // `withLabels()`. `domain` drives the `domain` label only; the generated
+    // NAME below is unchanged (F1).
     super(
       CLOUD_RUN_SERVICE_TYPE,
       resourceName,
@@ -105,30 +108,29 @@ export class CloudInfraCloudRunService extends CloudInfraComponent {
      *
      *  They now move UNDER this component, which prefixes their URNs with the
      *  component type token. To keep them the SAME resources (update-in-place,
-     *  not destroy+recreate) we alias the Service back to its old root-level URN
-     *  via `{ parent: pulumi.rootStackResource }` (the type-correct equivalent of
-     *  `noParent` in this pinned Pulumi version).
+     *  not destroy+recreate) the Service uses `childOpts()`, which aliases it
+     *  back to its old root-level URN (`{ parent: pulumi.rootStackResource }`,
+     *  the type-correct equivalent of `noParent` in this pinned Pulumi version).
      *
-     *  The NEG keeps `parent: this.service`. We FIRST try it WITHOUT an explicit
-     *  NEG alias to learn whether Pulumi reconstructs the NEG's old URN via
+     *  The NEG keeps `parent: this.service` via `nestedChildOpts(this.service)`
+     *  with NO explicit alias — Pulumi reconstructs the NEG's old URN via
      *  parent-alias inheritance (a child's effective alias set combines its own
-     *  aliases with its parent's). If a preview shows the NEG would REPLACE, an
-     *  explicit URN/parent alias is added.
+     *  aliases with its parent's). §9's real preview confirmed in-place.
      * ─────────────────────────────────────────────────────────────────────────
      */
 
-    // Create the Cloud Run service as a child (labels stamped via childOpts).
+    // Cloud Run Service supports `labels` → merge org labels into its args.
+    // v1 created it FLAT (stack root), so childOpts() aliases it back to root.
     this.service = new gcp.cloudrunv2.Service(
       resourceName,
-      serviceArgs,
-      this.childOpts({
-        aliases: [{ parent: pulumi.rootStackResource }],
-      })
+      this.withLabels(serviceArgs),
+      this.childOpts()
     );
 
-    // Create the Network Endpoint Group for load balancer integration, as a
-    // child of THIS component but still parented to the Service (matches v1).
-    // No explicit NEG alias yet — relying on parent-alias inheritance.
+    // Serverless NEG has NO `labels` field → args pass through unchanged (no
+    // withLabels). It was v1-PARENTED to the Service, so nestedChildOpts keeps
+    // `parent: this.service` with NO explicit alias — parent-alias inheritance
+    // reconstructs the old URN (proven in §9 real preview).
     this.networkEndpointGroup = new gcp.compute.RegionNetworkEndpointGroup(
       resourceName,
       {
@@ -139,7 +141,7 @@ export class CloudInfraCloudRunService extends CloudInfraComponent {
           service: this.service.name,
         },
       },
-      this.childOpts({ parent: this.service })
+      this.nestedChildOpts(this.service)
     );
 
     this.registerOutputs({

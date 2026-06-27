@@ -79,8 +79,9 @@ export class CloudInfraNat extends CloudInfraComponent {
    * migration — generated NAMEs unchanged (F1).
    *
    * NOTE on labels: none of `gcp.compute.Router`, `gcp.compute.RouterNat`, or
-   * `gcp.compute.Route` supports a `labels` field, so all children are parented
-   * WITHOUT label stamping (plain `{ parent: this, ... }`, not `childOpts`).
+   * `gcp.compute.Route` supports a `labels` field, so none of the children pass
+   * their args through `withLabels` (no labels injected); each uses
+   * `childOpts()` for the parent + root-alias only.
    *
    * @param meta The `CloudInfraMeta` instance to derive naming and region from.
    * @param cloudInfraConfig The configuration for the NAT gateway.
@@ -93,7 +94,13 @@ export class CloudInfraNat extends CloudInfraComponent {
   ) {
     const resourceName = meta.getName();
 
-    super(NAT_TYPE, resourceName, resourceName, { domain: meta.getDomain() }, opts);
+    super(
+      NAT_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
 
     CloudInfraLogger.info('Initializing NAT gateway component', {
       component: 'network-nat',
@@ -133,17 +140,15 @@ export class CloudInfraNat extends CloudInfraComponent {
   }
 
   private createRouter(config: CloudInfraNatConfig): gcp.compute.Router {
-    // v1: root-level → alias back to root. Router has NO labels.
+    // v1: root-level → childOpts() aliases back to root. Router has NO labels
+    // → args are NOT passed through withLabels.
     const router = new gcp.compute.Router(
       this.resourceName,
       {
         region: this.region,
         ...config.router,
       },
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
     return router;
   }
@@ -155,7 +160,8 @@ export class CloudInfraNat extends CloudInfraComponent {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { router: _, ...routerNatConfig } = config;
 
-    // v1: root-level → alias back to root. RouterNat has NO labels.
+    // v1: root-level → childOpts() aliases back to root. RouterNat has NO
+    // labels → args are NOT passed through withLabels.
     const routerNat = new gcp.compute.RouterNat(
       this.resourceName,
       {
@@ -163,10 +169,7 @@ export class CloudInfraNat extends CloudInfraComponent {
         router: router.name,
         ...routerNatConfig,
       },
-      {
-        parent: this,
-        aliases: [{ parent: pulumi.rootStackResource }],
-      }
+      this.childOpts()
     );
     return routerNat;
   }
@@ -180,11 +183,13 @@ export class CloudInfraNat extends CloudInfraComponent {
       priority: 1000,
     };
 
-    // v1: root-level → alias back to root. Route has NO labels.
-    const defaultRoute = new gcp.compute.Route(this.resourceName, routeConfig, {
-      parent: this,
-      aliases: [{ parent: pulumi.rootStackResource }],
-    });
+    // v1: root-level → childOpts() aliases back to root. Route has NO labels →
+    // args are NOT passed through withLabels.
+    const defaultRoute = new gcp.compute.Route(
+      this.resourceName,
+      routeConfig,
+      this.childOpts()
+    );
     return defaultRoute;
   }
 

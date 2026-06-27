@@ -97,13 +97,15 @@ export class CloudInfraDatabaseInstance extends CloudInfraComponent {
     };
 
     // gcp.sql.DatabaseInstance has NO top-level `labels` (only nested
-    // `settings.userLabels`), so we OMIT label stamping and use PLAIN opts
-    // (NOT childOpts) — injecting top-level labels would be a deploy hard-error.
-    // v1 created the instance FLAT → alias back to the stack root.
-    this.instance = new gcp.sql.DatabaseInstance(resourceName, instanceArgs, {
-      parent: this,
-      aliases: [{ parent: pulumi.rootStackResource }],
-    });
+    // `settings.userLabels`), so we OMIT label stamping (args are NOT passed
+    // through withLabels) — injecting top-level labels would be a deploy
+    // hard-error. v1 created the instance FLAT → childOpts() aliases it back to
+    // the stack root.
+    this.instance = new gcp.sql.DatabaseInstance(
+      resourceName,
+      instanceArgs,
+      this.childOpts()
+    );
 
     this.registerOutputs({
       instance: this.instance,

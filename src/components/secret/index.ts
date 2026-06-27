@@ -123,14 +123,13 @@ export class CloudInfraSecretVersion extends CloudInfraComponent {
         },
       };
 
-      // Secret supports `labels` → childOpts. v1 created it FLAT, so alias
-      // back to the stack root for in-place migration.
+      // Secret supports `labels` → merge org labels into its args. v1 created
+      // it FLAT (stack root), so childOpts() aliases it back to root for
+      // in-place migration.
       this.secret = new gcp.secretmanager.Secret(
         resourceName,
-        secretArgs,
-        this.childOpts({
-          aliases: [{ parent: pulumi.rootStackResource }],
-        })
+        this.withLabels(secretArgs),
+        this.childOpts()
       );
     } else {
       const secretArgs: gcp.secretmanager.RegionalSecretArgs = {
@@ -140,14 +139,12 @@ export class CloudInfraSecretVersion extends CloudInfraComponent {
         location: secretConfig.location ?? deriveRegion(meta),
       };
 
-      // RegionalSecret supports `labels` → childOpts. v1 created it FLAT, so
-      // alias back to the stack root for in-place migration.
+      // RegionalSecret supports `labels` → merge org labels into its args. v1
+      // created it FLAT (stack root), so childOpts() aliases it back to root.
       this.secret = new gcp.secretmanager.RegionalSecret(
         resourceName,
-        secretArgs,
-        this.childOpts({
-          aliases: [{ parent: pulumi.rootStackResource }],
-        })
+        this.withLabels(secretArgs),
+        this.childOpts()
       );
     }
 
@@ -157,21 +154,22 @@ export class CloudInfraSecretVersion extends CloudInfraComponent {
       secretData: config.secretData,
     };
 
-    // SecretVersion / RegionalSecretVersion have NO `labels` field → plain
-    // opts (NOT childOpts). They already had `parent: this.secret` in v1; KEEP
-    // it and add NO explicit alias — parent-alias inheritance reconstructs the
-    // old URN once the parent Secret is aliased to root (proven on the NEG).
+    // SecretVersion / RegionalSecretVersion have NO `labels` field → args pass
+    // through unchanged (no withLabels). They were v1-PARENTED to the Secret, so
+    // nestedChildOpts keeps `parent: this.secret` with NO explicit alias —
+    // parent-alias inheritance reconstructs the old URN once the parent Secret
+    // is aliased to root (proven on the NEG, §9/§9c).
     if (isGlobal) {
       this.version = new gcp.secretmanager.SecretVersion(
         resourceName,
         baseVersionConfig as gcp.secretmanager.SecretVersionArgs,
-        { parent: this.secret }
+        this.nestedChildOpts(this.secret)
       );
     } else {
       this.version = new gcp.secretmanager.RegionalSecretVersion(
         resourceName,
         baseVersionConfig as gcp.secretmanager.RegionalSecretVersionArgs,
-        { parent: this.secret }
+        this.nestedChildOpts(this.secret)
       );
     }
 
