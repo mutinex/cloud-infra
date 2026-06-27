@@ -14,7 +14,7 @@
 import { CloudInfraMeta, CloudInfraComputeInstance } from '@mutinex/cloud-infra';
 ```
 
-- Constructor – `new CloudInfraComputeInstance(name, config)`
+- Constructor – `new CloudInfraComputeInstance(name, args)`
 - Helpful getters – `.getInternalIp()`, `.getExternalIp()`, `.getZone()`
 - Stack outputs – `.exportOutputs(outputManager)`
 
@@ -22,7 +22,81 @@ import { CloudInfraMeta, CloudInfraComputeInstance } from '@mutinex/cloud-infra'
 
 ## Usage examples
 
-### 1. Basic web server instance
+### 1. Basic web server instance (name-first, preferred)
+
+```ts
+export const webServerInstance = new CloudInfraComputeInstance('web-server', {
+  domain: 'au',
+  machineType: 'e2-micro',
+  bootDisk: {
+    initializeParams: {
+      image: 'debian-cloud/debian-11',
+    },
+  },
+  networkInterfaces: [
+    {
+      network: 'default',
+      accessConfigs: [{}], // Assigns external IP
+    },
+  ],
+  metadata: {
+    'startup-script': `#!/bin/bash
+    apt-get update
+    apt-get install -y nginx
+    systemctl start nginx`,
+  },
+  tags: ['web-server', 'http-server'],
+});
+```
+
+The single args object splits into naming metadata (`domain` / `location` /
+`prefix` / `naming`) and the instance config (everything else, passed straight
+through to `gcp.compute.Instance`). `machineType`, `bootDisk` and
+`networkInterfaces` are required.
+
+### 2. Database instance with custom zone and service account (name-first)
+
+```ts
+export const databaseInstance = new CloudInfraComputeInstance('database', {
+  domain: 'us',
+  zone: 'us-central1-b', // Override default zone (instance-level placement)
+  machineType: 'n1-standard-2',
+  bootDisk: {
+    initializeParams: {
+      image: 'ubuntu-os-cloud/ubuntu-2004-lts',
+      size: 50,
+    },
+  },
+  networkInterfaces: [
+    {
+      network: 'vpc-network',
+      subnetwork: 'private-subnet',
+      // No accessConfigs = internal IP only
+    },
+  ],
+  serviceAccount: {
+    email: serviceAccount.email,
+    scopes: ['cloud-platform'],
+  },
+  attachedDisks: [
+    {
+      source: dataDisk.name,
+      deviceName: 'data-disk',
+    },
+  ],
+});
+```
+
+> **Zonal note:** `zone` is an instance-level placement field on the config and
+> is distinct from the naming `location`. If `zone` is omitted, the zone defaults
+> to `<region>-a` derived from meta.
+
+### 3. Meta-first construction (deprecated, back-compat)
+
+> **@deprecated** Prefer the name-first form above. Meta-first is retained for
+> backward compatibility and produces **identical** resources. Use it for
+> meta-only concepts such as `gcpProject` (project override) that have no
+> name-first equivalent.
 
 ```ts
 const webServerInstanceMeta = new CloudInfraMeta({
@@ -35,68 +109,32 @@ export const webServerInstance = new CloudInfraComputeInstance(
   webServerInstanceMeta,
   {
     machineType: 'e2-micro',
-    bootDisk: {
-      initializeParams: {
-        image: 'debian-cloud/debian-11',
-      },
-    },
-    networkInterfaces: [
-      {
-        network: 'default',
-        accessConfigs: [{}], // Assigns external IP
-      },
-    ],
-    metadata: {
-      'startup-script': `#!/bin/bash
-      apt-get update
-      apt-get install -y nginx
-      systemctl start nginx`,
-    },
-    tags: ['web-server', 'http-server'],
+    bootDisk: { initializeParams: { image: 'debian-cloud/debian-11' } },
+    networkInterfaces: [{ network: 'default' }],
   }
 );
 ```
 
-### 2. Database instance with custom zone and service account
+---
+
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
 
 ```ts
-const databaseInstanceMeta = new CloudInfraMeta({
-  name: 'database',
-  domain: 'us',
-  gcpProject: 'my-project',
-});
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
 
-export const databaseInstance = new CloudInfraComputeInstance(
-  databaseInstanceMeta,
-  {
-    zone: 'us-central1-b', // Override default zone
-    machineType: 'n1-standard-2',
-    bootDisk: {
-      initializeParams: {
-        image: 'ubuntu-os-cloud/ubuntu-2004-lts',
-        size: 50,
-      },
-    },
-    networkInterfaces: [
-      {
-        network: 'vpc-network',
-        subnetwork: 'private-subnet',
-        // No accessConfigs = internal IP only
-      },
-    ],
-    serviceAccount: {
-      email: serviceAccount.email,
-      scopes: ['cloud-platform'],
-    },
-    attachedDisks: [
-      {
-        source: dataDisk.name,
-        deviceName: 'data-disk',
-      },
-    ],
-  }
-);
+const out = new CloudInfraOutput();
+webServerInstance.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
 ```
+
+`exportOutputs` records the instance under `gcp:compute:Instance`. See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
 
 ---
 

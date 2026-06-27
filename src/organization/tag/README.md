@@ -4,7 +4,7 @@ A high-level wrapper around `gcp.tags.TagKey` and `gcp.tags.TagValue` that creat
 
 ## Features
 
-- **Name / ID generation** – `shortName` is derived from the name passed to the constructor (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
+- **Name / ID generation** – the tag key `shortName` is derived from the attached [`CloudInfraMeta`](../../core/meta/README.md) (`meta.getName()`, see naming rules).
 - **Parent defaulting** – `parent` defaults to the organization root when not specified.
 - **Multi-value support** – Creates a tag key with multiple predefined values in a single component.
 - **Automatic value creation** – Tag values are automatically created for each specified value.
@@ -12,6 +12,10 @@ A high-level wrapper around `gcp.tags.TagKey` and `gcp.tags.TagValue` that creat
 - **Output registration** – Automatically recorded via [`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption.
 
 ---
+
+## Construction
+
+`CloudInfraTag` is **meta-first only** – it accepts a [`CloudInfraMeta`](../../core/meta/README.md) instance, a (required) config object containing the `values` array, and optional Pulumi `ComponentResourceOptions`. There is no name-first (`new CloudInfraTag('environment', …)`) overload; the `naming` option (`'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }`) is supplied on the `CloudInfraMeta`.
 
 ## Quick Example
 
@@ -95,12 +99,13 @@ const folderMeta = new CloudInfraMeta({
 });
 
 const productionFolder = new CloudInfraFolder(folderMeta, {
-  cloudInfraTags: [environmentTags.getTagValue('prd')],
+  // Reference the tag value by its resource ID (e.g. resolved from outputs)
+  cloudInfraTags: ['tagValues/1234567890'],
 });
 
-// Apply environment tag to a project
+// Apply environment tag to a project (service projects are name-first)
 const devProject = new CloudInfraServiceProject('analytics-dev', {
-  cloudInfraTags: [environmentTags.getTagValue('dev')],
+  cloudInfraTags: ['tagValues/0987654321'],
   vpcHostProject: hostProject.getProjectId(),
 });
 ```
@@ -167,42 +172,40 @@ const config: CloudInfraTagConfig = {
 
 ---
 
-## Runtime API
+## Outputs
+
+The component exposes `exportOutputs(manager)` to record the tag key (`gcp:tags:TagKey`) and each tag value (`gcp:tags:TagValue`) with a [`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+environmentTags.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); // legacy nested wire
+```
+
+### Runtime API
 
 | Method                   | Description                                                      |
 | ------------------------ | ---------------------------------------------------------------- |
 | `exportOutputs(manager)` | Records the tag key and values with a `CloudInfraOutput` manager |
 
-### Cross-Stack Integration
-
-```ts
-// Export tag outputs for other stacks
-const outputManager = new CloudInfraOutput();
-environmentTags.exportOutputs(outputManager);
-
-// Use tag values in other resources
-const folderMeta = new CloudInfraMeta({ name: 'production', omitDomain: true });
-const folder = new CloudInfraFolder(folderMeta, {
-  cloudInfraTags: ['tagValues/1234567890'], // Reference to tag value ID
-});
-```
-
 ---
 
 ## Tag Value References
 
-To use tag values created by `CloudInfraTag`, you need to reference them by their resource ID. The component creates tag values with predictable names based on the `shortName`:
+To use tag values created by `CloudInfraTag`, reference them by their resource ID. The component records both the tag key and each tag value via `exportOutputs`, so downstream stacks can resolve the `tagValues/{id}` path from the exported outputs (or supply a known ID directly):
 
 ```ts
-// Tag values are created as: tagValues/{generated-id}
-// You can reference them in other components that accept cloudInfraTags
+// Tag values are recorded as gcp:tags:TagValue, grouped by their shortName.
+// Reference them in other components that accept cloudInfraTags:
 
 const folderMeta = new CloudInfraMeta({ name: 'production', omitDomain: true });
 const folder = new CloudInfraFolder(folderMeta, {
   cloudInfraTags: [
-    // Reference tag values by their resource IDs
-    environmentTags.getTagValue('prd'), // If this method exists
-    // Or use the full resource path
+    // Full resource path of the tag value
     'tagValues/1234567890',
   ],
 });

@@ -192,6 +192,32 @@ All resource names follow `CloudInfraMeta` naming rules.
 
 ---
 
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+alb.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the load-balancer IP address under
+`gcp:compute:GlobalAddress` (global) or `gcp:compute:Address` (regional). See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
+
+> **Meta-first (deprecated):** `new CloudInfraAlb(meta, config)` is retained for
+> backward compatibility and produces **identical** resources; the name-first
+> form shown above is preferred.
+
+---
+
 ## Behaviour notes
 
 1. **Global vs regional** is inferred from `meta.domain` (`gl` → global). For

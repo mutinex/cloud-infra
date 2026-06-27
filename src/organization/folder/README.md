@@ -166,6 +166,37 @@ const folder = new CloudInfraFolder(meta, {
 
 ---
 
+## Construction
+
+`CloudInfraFolder` is **meta-first only** – it accepts a [`CloudInfraMeta`](../../core/meta/README.md) instance, an optional config object, and optional Pulumi `ComponentResourceOptions`:
+
+```ts
+const meta = new CloudInfraMeta({ name: 'production', omitDomain: true });
+const folder = new CloudInfraFolder(meta, {
+  deletionProtection: true,
+});
+```
+
+There is no name-first (`new CloudInfraFolder('production', …)`) overload. The `naming` option (`'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }`) is supplied on the `CloudInfraMeta`, not on the folder config.
+
+---
+
+## Outputs
+
+The component exposes `exportOutputs(manager)` to record the folder with a [`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+folder.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); // legacy nested wire
+```
+
+---
+
 ## Runtime API
 
 | Method                   | Description                                                |

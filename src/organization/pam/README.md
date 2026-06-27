@@ -4,7 +4,7 @@ A high-level wrapper around `gcp.privilegedaccessmanager.Entitlement` that appli
 
 ## Features
 
-- **Name / ID generation** – `entitlementId` is derived from the name passed to the constructor (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
+- **Name / ID generation** – `entitlementId` is derived from the attached [`CloudInfraMeta`](../../core/meta/README.md) (`meta.getName()`, see naming rules).
 - **Location defaulting** – `location` is set to `global` when the domain is `gl` (the default).
 - **Resource path normalisation** – relative paths like `/projects/my-proj` are automatically prefixed with `//cloudresourcemanager.googleapis.com/`.
 - **Resource-type mapping** – shorthand values (`"project"`, `"folder"`) expand to fully-qualified Cloud Resource Manager (CRM) type strings.
@@ -17,6 +17,10 @@ A high-level wrapper around `gcp.privilegedaccessmanager.Entitlement` that appli
 - **Output registration** – automatically recorded via [`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption.
 
 ---
+
+## Construction
+
+`CloudInfraEntitlement` is **meta-first only** – it accepts a [`CloudInfraMeta`](../../core/meta/README.md) instance, an optional config object, and optional Pulumi `ComponentResourceOptions`. There is no name-first (`new CloudInfraEntitlement('support', …)`) overload; the `naming` option (`'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }`) is supplied on the `CloudInfraMeta`.
 
 ## Quick Example
 
@@ -277,7 +281,7 @@ pulumi config set cloudInfra:organizationName "your-organization-name-here"
 
 | Field                           | Type     | Description                                                                                                 |
 | ------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| `entitlementId`                 | `string` | Unique identifier for the entitlement. Derived from the constructor name (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules). |
+| `entitlementId`                 | `string` | Unique identifier for the entitlement. Derived from `meta.getName()` (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules). |
 | `location`                      | `string` | GCP location for the entitlement. Defaults to `global` when domain is `gl`.                                 |
 | `maxRequestDuration`            | `string` | Maximum duration for access requests (e.g., `"3600s"` for 1 hour).                                          |
 | `privilegedAccess`              | `object` | Configuration for the privileged access being granted.                                                      |
@@ -324,6 +328,31 @@ approvalWorkflow: {
   }
 }
 ```
+
+---
+
+## Outputs
+
+The component exposes `exportOutputs(manager)` to record the entitlement with a [`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+entitlement.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); // legacy nested wire
+```
+
+### Runtime API
+
+| Method                   | Description                                                                |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `getEntitlement()`       | Returns the underlying `gcp.privilegedaccessmanager.Entitlement` resource. |
+| `getId()`                | `Output<string>` of the entitlement ID.                                    |
+| `getMeta()`              | Returns the attached `CloudInfraMeta` instance.                            |
+| `exportOutputs(manager)` | Records the entitlement with a `CloudInfraOutput` manager.                 |
 
 ---
 

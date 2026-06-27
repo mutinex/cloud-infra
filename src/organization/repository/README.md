@@ -106,15 +106,16 @@ No other transformations are performed; if you pass a dual-region code like `nam
 
 ## Outputs
 
-Use `CloudInfraOutput` to capture the resource in a structured way that can be consumed by other stacks.
+The component exposes `exportOutputs(manager)` to record the repository with a [`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption:
 
 ```ts
 import { CloudInfraOutput } from '@mutinex/cloud-infra';
 
-const output = new CloudInfraOutput();
-repo.exportOutputs(output);
+const out = new CloudInfraOutput();
+repo.exportOutputs(out);
 
-export const infra = output.getOutputs();
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); // legacy nested wire
 ```
 
 ---
@@ -123,12 +124,21 @@ export const infra = output.getOutputs();
 
 ### Constructor
 
+`CloudInfraRepository` is **name-first** (v2 DX, preferred):
+
 ```ts
-new CloudInfraRepository(name: string, config?: CloudInfraMetaInput & Partial<gcp.artifactregistry.RepositoryArgs>);
+new CloudInfraRepository(
+  name: string,
+  args?: CloudInfraRepositoryArgs,
+  opts?: pulumi.ComponentResourceOptions,
+);
 ```
 
 - **`name`** – Required resource name controlling naming (see [`CloudInfraMeta`](../../core/meta/README.md) naming rules).
-- **`config`** – Naming options (`domain`, `location`, `prefix`, `naming`, …) plus any subset of Pulumi `RepositoryArgs` to fine-tune the resource.
+- **`args`** – Naming options (`domain`, `location`, `prefix`, `naming` — `'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }`) folded together with any subset of Pulumi `RepositoryArgs` (`format`, `description`, `cleanupPolicies`, …).
+- **`opts`** – Optional Pulumi `ComponentResourceOptions`.
+
+A meta-first overload (`new CloudInfraRepository(meta, config, opts?)`) is retained for backward compatibility but is **`@deprecated`**; it produces identical resources.
 
 ### Methods
 

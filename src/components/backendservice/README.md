@@ -23,7 +23,42 @@ import { CloudInfraMeta, CloudInfraBackendService } from '@mutinex/cloud-infra';
 
 ## Usage examples
 
-### 1. Global backend with Cloud Run integration
+### 1. Global backend with health check (name-first, preferred)
+
+```ts
+const apiBackend = new CloudInfraBackendService('api', {
+  domain: 'gl', // "gl" → global gcp.compute.BackendService
+  backends: [{ group: apiAuService.getNetworkEndpointGroup().id }],
+  healthCheck: {
+    requestPath: '/health',
+    port: 8080,
+  },
+});
+```
+
+### 2. Regional backend with health check (name-first, preferred)
+
+```ts
+const regionalBackend = new CloudInfraBackendService('frontend', {
+  domain: 'au', // non-"gl" domain → regional gcp.compute.RegionBackendService
+  backends: [{ group: frontendService.getNetworkEndpointGroup().id }],
+  healthCheck: {
+    requestPath: '/health',
+    port: 3000,
+  },
+});
+```
+
+The single args object splits into naming metadata (`domain` / `location` /
+`prefix` / `naming`) and the backend-service config (everything else, passed
+straight through to the underlying `BackendService` / `RegionBackendService`).
+
+### 3. Meta-first construction (deprecated, back-compat)
+
+> **@deprecated** Prefer the name-first form above. Meta-first is retained for
+> backward compatibility and produces **identical** resources. Use it when you
+> need a meta-only concept such as `gcpProject` (project override) or
+> `overrideNamingRules` that has no name-first equivalent.
 
 ```ts
 const apiGlobalBackendServiceMeta = new CloudInfraMeta({
@@ -36,37 +71,32 @@ const apiGlobalBackendServiceMeta = new CloudInfraMeta({
 const apiGlobalBackendService = new CloudInfraBackendService(
   apiGlobalBackendServiceMeta,
   {
-    project: 'my-project',
-    backends: [
-      {
-        group: apiAuService.getNetworkEndpointGroup().id,
-      },
-    ],
-    healthCheck: {
-      requestPath: '/health',
-      port: 8080,
-    },
+    backends: [{ group: apiAuService.getNetworkEndpointGroup().id }],
+    healthCheck: { requestPath: '/health', port: 8080 },
   }
 );
 ```
 
-### 2. Regional backend with health check
+---
+
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
 
 ```ts
-const regionalBackendMeta = new CloudInfraMeta({
-  name: 'frontend',
-  domain: 'au',
-  gcpProject: 'my-project',
-});
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
 
-const regionalBackend = new CloudInfraBackendService(regionalBackendMeta, {
-  backends: [{ group: frontendService.getNetworkEndpointGroup().id }],
-  healthCheck: {
-    requestPath: '/health',
-    port: 3000,
-  },
-});
+const out = new CloudInfraOutput();
+apiBackend.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
 ```
+
+`exportOutputs` records the backend service (and the health-check, if one was
+created). See [`core/output`](../../core/output) and
+[`core/reference`](../../core/reference) for the full wire format and for
+consuming these outputs cross-stack via `ref.get(...)`.
 
 ---
 

@@ -61,16 +61,18 @@ _(Two examples total – no bulk version of Cloud Run jobs exists.)_
 
 ## Configuration
 
-Accepts every field from `gcp.cloudrunv2.JobArgs`. If `location` is omitted the
-component calls `deriveRegion(meta)` which maps the meta's domain/location to a
-single GCP region.
+Accepts every field from `gcp.cloudrunv2.JobArgs`. On the name-first surface,
+`location` is naming metadata: it both drives the generated name and resolves
+the deployment region via `deriveRegion(meta)`. If omitted, the region is
+derived from `domain`.
 
 ---
 
 ## Defaults & behaviour
 
-1. **Name** defaults to `meta.getName()` if not provided.
-2. **Region** derived from `CloudInfraMeta` unless `config.location` is set.
+1. **Name** derives from the resolved `CloudInfraMeta`.
+2. **Region** derived from the naming `location` / `domain` via
+   `deriveRegion(meta)`.
 3. Resource names follow the standard CloudInfra naming convention.
 
 ---
@@ -82,6 +84,32 @@ single GCP region.
 | `getJob()`               | `gcp.cloudrunv2.Job`    | Underlying resource.                                                |
 | `getName()`              | `pulumi.Output<string>` | Job name.                                                           |
 | `exportOutputs(manager)` | –                       | Records the job under `gcp:cloudrunv2:Job` in a `CloudInfraOutput`. |
+
+---
+
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+job.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the job under `gcp:cloudrunv2:Job`. See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
+
+> **Meta-first (deprecated):** `new CloudInfraCloudRunJob(meta, config)` is
+> retained for backward compatibility and produces **identical** resources; the
+> name-first form shown above is preferred. Meta-first also exposes a
+> config-level `location` override (a region different from the naming location).
 
 ---
 

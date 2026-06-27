@@ -85,33 +85,50 @@ const apiDbUriString = pulumi.interpolate`postgres://${apiDbUser.getName()}:${ap
 ### 3. Secret management with CloudInfraSecretVersion
 
 ```ts
-const masterInstancePasswordMeta = new CloudInfraMeta({
-  name: 'api-sql-master-pwd',
+const masterInstancePassword = new CloudInfraSecretVersion('api-sql-master-pwd', {
   domain: 'au',
   location: ['australia-southeast1', 'us-central1'],
+  project: 'my-project',
+  secretData: sqlConfig.password,
 });
 
-const masterInstancePassword = new CloudInfraSecretVersion(
-  masterInstancePasswordMeta,
-  {
-    project: 'my-project',
-    secretData: sqlConfig.password,
-  }
-);
-
-const apiDbUriMeta = new CloudInfraMeta({
-  name: 'api-sql-master-conn',
+const apiDbUri = new CloudInfraSecretVersion('api-sql-master-conn', {
   domain: 'au',
   location: ['australia-southeast1', 'us-central1'],
-});
-
-const apiDbUri = new CloudInfraSecretVersion(apiDbUriMeta, {
   project: 'my-project',
   secretData: apiDbUriString,
 });
 ```
 
 _(Three examples – within the 4-example limit.)_
+
+---
+
+## Outputs
+
+All three components participate in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+masterSqlInstance.exportOutputs(out);
+apiDb.exportOutputs(out);
+apiDbUser.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the instance, database and user under their respective
+`gcp:sql:*` types. See [`core/output`](../../core/output) and
+[`core/reference`](../../core/reference) for the full wire format and for
+consuming these outputs cross-stack via `ref.get(...)`.
+
+> **Meta-first (deprecated):** the meta-first overload
+> (`new CloudInfraDatabaseInstance(meta, config)`, etc.) is retained for
+> backward compatibility and produces **identical** resources; the name-first
+> form shown above is preferred.
 
 ---
 

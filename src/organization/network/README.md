@@ -18,29 +18,31 @@ outputs.
 
 ## Quick-start
 
+All four components are **name-first** (v2 DX): the first argument is the resource
+name and naming metadata (`domain` / `location` / `prefix` / `naming` —
+`'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }`) is folded
+into the args object alongside the resource config. A meta-first overload
+(`new CloudInfraSubnet(meta, config, opts?)`) is retained for backward compatibility
+but is **`@deprecated`**; it produces identical resources.
+
 ```typescript
 import {
-  CloudInfraMeta,
   CloudInfraSubnet,
   CloudInfraConnector,
   CloudInfraPSA,
   CloudInfraNat,
 } from '@mutinex/cloud-infra';
 
-// Shared meta – forces region & naming conventions
-const meta = new CloudInfraMeta({
-  name: 'network-demo',
-  location: 'us-central1',
-});
-
 // 1️⃣ Subnetwork (10.0.1.0/24)
-const subnet = new CloudInfraSubnet(meta, {
+const subnet = new CloudInfraSubnet('network-demo', {
+  location: 'us-central1',
   network: 'projects/core-vpc/global/networks/shared',
   ipCidrRange: '10.0.1.0/24',
 });
 
 // 2️⃣ Serverless VPC Connector
-const connector = new CloudInfraConnector(meta, {
+const connector = new CloudInfraConnector('network-demo', {
+  location: 'us-central1',
   subnet: {
     name: subnet.getName(),
     projectId: 'core-vpc',
@@ -48,7 +50,8 @@ const connector = new CloudInfraConnector(meta, {
 });
 
 // 3️⃣ Private Service Access to Cloud SQL (Service Networking default)
-const psa = new CloudInfraPSA(meta, {
+const psa = new CloudInfraPSA('network-demo', {
+  location: 'us-central1',
   network: 'projects/core-vpc/global/networks/shared',
   reservedPeeringRanges: [
     {
@@ -61,7 +64,8 @@ const psa = new CloudInfraPSA(meta, {
 });
 
 // 4️⃣ NAT Gateway for private subnet outbound internet access
-const nat = new CloudInfraNat(meta, {
+const nat = new CloudInfraNat('network-demo', {
+  location: 'us-central1',
   router: {
     network: 'projects/core-vpc/global/networks/shared',
   },
@@ -74,6 +78,10 @@ const nat = new CloudInfraNat(meta, {
   ],
 });
 ```
+
+The `Component Details` and `Runtime API` examples below use the meta-first form
+(`new CloudInfraSubnet(meta, …)`) for brevity; the same config object is accepted
+in the name-first form shown above.
 
 ---
 
@@ -348,6 +356,26 @@ const nat = new CloudInfraNat(meta, {
     },
   ],
 });
+```
+
+---
+
+## Outputs
+
+Each component exposes `exportOutputs(manager)` to record its resources with a
+[`CloudInfraOutput`](../../core/output/README.md) for cross-stack consumption:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+subnet.exportOutputs(out);
+connector.exportOutputs(out);
+psa.exportOutputs(out);
+nat.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); // legacy nested wire
 ```
 
 ---

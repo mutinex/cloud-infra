@@ -133,7 +133,13 @@ export const apiEmailAu = saAu.emails.api;
 export const frontendMemberUs = saUs.members.frontend;
 ```
 
-### 5. Bypass naming restrictions for special cases
+### 5. Bypass naming restrictions for special cases (meta-first)
+
+> **@deprecated** Meta-first construction (`new CloudInfraAccount(meta, config)`)
+> is retained for backward compatibility and produces **identical** resources;
+> the name-first form (examples 1–2) is preferred. Meta-first remains the path
+> for meta-only concepts — `gcpProject`, `omitPrefix`/`omitDomain` and
+> `overrideNamingRules` — which have no name-first equivalent.
 
 ```ts
 // When you need to use names that violate GCP's strict naming rules
@@ -174,6 +180,27 @@ export const organizationGhaAccounts = new CloudInfraBulkAccount(
   }
 );
 ```
+
+---
+
+## Outputs
+
+Both components participate in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+apiAccount.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the account(s) under `gcp:serviceaccount:Account`. See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
 
 ---
 

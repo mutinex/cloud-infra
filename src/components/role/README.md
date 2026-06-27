@@ -247,6 +247,32 @@ embedded directly in interpolations (e.g., `${role}` resolves to
 
 ---
 
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+orgViewer.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the role under `gcp:organizations:IAMCustomRole`
+(org-level, when `orgId` is set) or `gcp:projects:IAMCustomRole` (project-level).
+See [`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
+
+> **Meta-first (deprecated):** `new CloudInfraRole(meta, config)` is retained for
+> backward compatibility and produces **identical** resources; the name-first
+> form shown above is preferred.
+
+---
+
 ## Behaviour notes
 
 1. Permissions are fetched via `gcp.iam.getTestablePermissions` and filtered so

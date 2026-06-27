@@ -187,16 +187,17 @@ export const ghaAccessMatrix = new CloudInfraAccessMatrix(
 
 ## Additional Examples
 
-1. **Minimal pool in default project**
+1. **Minimal pool in default project** (name-first, preferred)
 
    ```ts
-   new CloudInfraWIP(meta);
+   new CloudInfraWIP('github', { naming: 'literal' });
    ```
 
-2. **Provider for GitHub Actions with attribute mapping**
+2. **Provider for GitHub Actions with attribute mapping** (name-first)
 
    ```ts
-   const provider = new CloudInfraWIPProvider(meta, {
+   const provider = new CloudInfraWIPProvider('github', {
+     naming: 'literal',
      pool: ghaPool,
      attributeMapping: {
        'google.subject': 'assertion.sub',
@@ -210,6 +211,34 @@ export const ghaAccessMatrix = new CloudInfraAccessMatrix(
    const principalSet = provider.getPrincipalSet('my-repo', 'prod');
    // → principalSet://iam.googleapis.com/…/attribute.service/Mutiny-Group/my-repo/prod
    ```
+
+> **Meta-first (deprecated):** `new CloudInfraWIP(meta, config)` and
+> `new CloudInfraWIPProvider(meta, config)` are retained for backward
+> compatibility and produce **identical** resources; the name-first forms above
+> are preferred.
+
+---
+
+## Outputs
+
+Both components participate in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+ghaPool.exportOutputs(out);
+ghaProvider.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the pool under `gcp:iam:WorkloadIdentityPool` and the
+provider under `gcp:iam:WorkloadIdentityPoolProvider`. See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
 
 ---
 
