@@ -16,11 +16,36 @@ import {
   DelayResource,
 } from './common';
 import { gcpConfig } from '../../config';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Host Project component. */
 export const CLOUD_INFRA_HOST_PROJECT_TYPE =
   'cloud-infra:project:CloudInfraHostProject';
+
+/**
+ * Name-first construction args for `CloudInfraHostProject` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the project config
+ * ({@link CloudInfraProjectConfig}) into a single args object, so a host project
+ * can be built as
+ * `new CloudInfraHostProject("net", { domain: "au", services: [...] })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the project config — every deep child name (incl. the
+ * `:`-delimited API/service names, the Shared-VPC network/host-binding, the two
+ * dynamic providers, and `protect`/`dependsOn` wiring) is derived exactly as the
+ * meta-first path.
+ *
+ * `gcp.organizations.Project` has no `location`, so {@link NamingArgs.location}
+ * (which drives only the generated name) cannot collide with the config arm.
+ */
+export type CloudInfraHostProjectArgs = NamingArgs & CloudInfraProjectConfig;
 
 /**
  * CloudInfra Organization – Host Project
@@ -59,7 +84,24 @@ export class CloudInfraHostProject extends CloudInfraComponent {
   private readonly config: CloudInfraProjectConfig;
 
   /**
-   * Create a new CloudInfra Host Project.
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the project config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * Every deep child (project, bootstrap + delay dynamic providers, the
+   * `:`-delimited API services, Shared-VPC network/host-binding, IAM members)
+   * keeps its name, parent, alias, labels and `protect`/`dependsOn` wiring
+   * exactly as the meta-first path — only meta acquisition is rerouted.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraHostProjectArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraHostProject(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
    *
    * @param meta - Metadata for naming and configuration
    * @param config - Optional project configuration
@@ -68,7 +110,28 @@ export class CloudInfraHostProject extends CloudInfraComponent {
     meta: CloudInfraMeta,
     config: CloudInfraProjectConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraHostProjectArgs | CloudInfraProjectConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // project config passed straight through (consumed UNCHANGED below — every
+    // child name, dynamic provider, protect/dependsOn is derived from it).
+    let meta: CloudInfraMeta;
+    let config: CloudInfraProjectConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraHostProjectArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraProjectConfig;
+    }
+
     // ── Pre-super computation ──────────────────────────────────────────────
     // `super()` must be the first statement, so the name/validation logic that
     // previously ran at the top of the body is hoisted here WITHOUT changing
