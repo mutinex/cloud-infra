@@ -1,24 +1,50 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ReferenceWithoutDomain } from '../reference-without-domain';
 
-// Mock the reference manager
+// A controllable mock StackReference. `outputs.apply` runs the resolver
+// synchronously and wraps the result in a thenable-like `{ apply }` so the
+// lazy `.apply(...)` chains in CloudInfraReference resolve eagerly in tests.
 const mockStackRef = {
   outputs: {
     apply: vi.fn(),
   },
+  getOutput: vi.fn(),
 };
 
-vi.mock('../reference-manager', () => ({
-  CloudInfraReference: {
-    getStackRef: vi.fn(() => mockStackRef),
-  },
+// Mock @pulumi/pulumi so the REAL CloudInfraReference (and the
+// ReferenceWithoutDomain shim that delegates to it) construct a controllable
+// StackReference. This exercises the merged domain-optional resolution path.
+vi.mock('@pulumi/pulumi', () => ({
+  Config: vi.fn(() => ({
+    require: vi.fn((key: string) => `mock-${key}`),
+  })),
+  StackReference: vi.fn(() => mockStackRef),
 }));
 
-describe('DomainOptionalReference', () => {
+import { ReferenceWithoutDomain } from '../reference-without-domain';
+import { CloudInfraReference } from '../reference-manager';
+
+function primeOutputs(outputs: Record<string, unknown>): void {
+  mockStackRef.outputs.apply.mockImplementation(
+    (fn: (outputs: unknown) => unknown) => {
+      const result = fn(outputs);
+      // `all()` consumes the first `.apply` result directly (an array); the
+      // resolve()/record path chains a second `.apply`, so wrap non-arrays.
+      if (Array.isArray(result)) {
+        return result;
+      }
+      return {
+        apply: (callback: (result: unknown) => unknown) => callback(result),
+      };
+    }
+  );
+}
+
+describe('DomainOptionalReference (ReferenceWithoutDomain shim)', () => {
   let domainOptionalRef: ReferenceWithoutDomain;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    CloudInfraReference.clearCache();
     domainOptionalRef = new ReferenceWithoutDomain({
       stack: 'organization/cms/prod',
     });
@@ -26,23 +52,17 @@ describe('DomainOptionalReference', () => {
 
   describe('String Value Handling', () => {
     it('should handle email format string values', () => {
-      // Mock stack outputs with string values
-      const mockStackOutputs = {
-        'ciServiceAccountEmail': 'ci-service@cms-prod.iam.gserviceaccount.com',
-        'anotherAccount': 'another@project.iam.gserviceaccount.com',
-      };
-
-      mockStackRef.outputs.apply.mockImplementation((fn: (outputs: unknown) => unknown) => {
-        const result = fn(mockStackOutputs);
-        return {
-          apply: (callback: (result: unknown) => unknown) => callback(result),
-        };
+      primeOutputs({
+        ciServiceAccountEmail: 'ci-service@cms-prod.iam.gserviceaccount.com',
+        anotherAccount: 'another@project.iam.gserviceaccount.com',
       });
 
       domainOptionalRef.get('ciServiceAccountEmail');
-      
-      // Since we're mocking, we can directly check the result
-      const result = mockStackRef.outputs.apply.mock.calls[0][0](mockStackOutputs);
+
+      const result = mockStackRef.outputs.apply.mock.calls[0][0]({
+        ciServiceAccountEmail: 'ci-service@cms-prod.iam.gserviceaccount.com',
+        anotherAccount: 'another@project.iam.gserviceaccount.com',
+      });
 
       expect(result).toEqual({
         email: 'ci-service@cms-prod.iam.gserviceaccount.com',
@@ -53,22 +73,17 @@ describe('DomainOptionalReference', () => {
     });
 
     it('should handle member format string values', () => {
-      // Mock stack outputs with member format string values
-      const mockStackOutputs = {
-        'anotherAccount': 'serviceAccount:another@project.iam.gserviceaccount.com',
-      };
-
-      mockStackRef.outputs.apply.mockImplementation((fn: (outputs: unknown) => unknown) => {
-        const result = fn(mockStackOutputs);
-        return {
-          apply: (callback: (result: unknown) => unknown) => callback(result),
-        };
+      primeOutputs({
+        anotherAccount:
+          'serviceAccount:another@project.iam.gserviceaccount.com',
       });
 
       domainOptionalRef.get('anotherAccount');
-      
-      // Since we're mocking, we can directly check the result
-      const result = mockStackRef.outputs.apply.mock.calls[0][0](mockStackOutputs);
+
+      const result = mockStackRef.outputs.apply.mock.calls[0][0]({
+        anotherAccount:
+          'serviceAccount:another@project.iam.gserviceaccount.com',
+      });
 
       expect(result).toEqual({
         email: 'another@project.iam.gserviceaccount.com',
@@ -79,42 +94,34 @@ describe('DomainOptionalReference', () => {
     });
 
     it('should throw error for missing keys', () => {
-      const mockStackOutputs = {
-        'existingKey': 'existing@example.com',
-      };
-
-      mockStackRef.outputs.apply.mockImplementation((fn: (outputs: unknown) => unknown) => {
-        const result = fn(mockStackOutputs);
-        return {
-          apply: (callback: (result: unknown) => unknown) => callback(result),
-        };
-      });
+      primeOutputs({ existingKey: 'existing@example.com' });
 
       expect(() => {
         domainOptionalRef.get('missingKey');
-        // Trigger the apply function to test the error
-        mockStackRef.outputs.apply.mock.calls[0][0](mockStackOutputs);
+        mockStackRef.outputs.apply.mock.calls[0][0]({
+          existingKey: 'existing@example.com',
+        });
       }).toThrow(
         "Domain-optional resource 'missingKey' not found in stack 'organization/cms/prod'. Available keys: [existingKey]"
       );
     });
 
     it('should throw error for non-string values', () => {
-      const mockStackOutputs = {
-        'invalidKey': { email: 'test@example.com', member: 'serviceAccount:test@example.com' },
-      };
-
-      mockStackRef.outputs.apply.mockImplementation((fn: (outputs: unknown) => unknown) => {
-        const result = fn(mockStackOutputs);
-        return {
-          apply: (callback: (result: unknown) => unknown) => callback(result),
-        };
+      primeOutputs({
+        invalidKey: {
+          email: 'test@example.com',
+          member: 'serviceAccount:test@example.com',
+        },
       });
 
       expect(() => {
         domainOptionalRef.get('invalidKey');
-        // Trigger the apply function to test the error
-        mockStackRef.outputs.apply.mock.calls[0][0](mockStackOutputs);
+        mockStackRef.outputs.apply.mock.calls[0][0]({
+          invalidKey: {
+            email: 'test@example.com',
+            member: 'serviceAccount:test@example.com',
+          },
+        });
       }).toThrow(
         "Expected string value for 'invalidKey' in stack 'organization/cms/prod', got object"
       );
@@ -123,40 +130,17 @@ describe('DomainOptionalReference', () => {
 
   describe('Public API Methods', () => {
     beforeEach(() => {
-      const mockStackOutputs = {
-        'testAccount': 'test@example.com',
-      };
-
-      mockStackRef.outputs.apply.mockImplementation((fn: (outputs: unknown) => unknown) => {
-        const result = fn(mockStackOutputs);
-        return {
-          apply: (callback: (result: unknown) => unknown) => callback(result),
-        };
-      });
+      primeOutputs({ testAccount: 'test@example.com' });
     });
 
     it('should return email via getEmail method', () => {
-      domainOptionalRef.getEmail('testAccount');
-      
-      // Test that the method was called correctly
-      expect(mockStackRef.outputs.apply).toHaveBeenCalled();
-      
-      // Test the conversion logic by calling the function directly
-      const mockStackOutputs = { 'testAccount': 'test@example.com' };
-      const result = mockStackRef.outputs.apply.mock.calls[0][0](mockStackOutputs);
-      expect(result.email).toBe('test@example.com');
+      const email = domainOptionalRef.getEmail('testAccount');
+      expect(email).toBe('test@example.com');
     });
 
     it('should return member via getMember method', () => {
-      domainOptionalRef.getMember('testAccount');
-      
-      // Test that the method was called correctly
-      expect(mockStackRef.outputs.apply).toHaveBeenCalled();
-      
-      // Test the conversion logic by calling the function directly
-      const mockStackOutputs = { 'testAccount': 'test@example.com' };
-      const result = mockStackRef.outputs.apply.mock.calls[0][0](mockStackOutputs);
-      expect(result.member).toBe('serviceAccount:test@example.com');
+      const member = domainOptionalRef.getMember('testAccount');
+      expect(member).toBe('serviceAccount:test@example.com');
     });
 
     it('should return identifier via getIdentifier method', () => {
@@ -168,18 +152,63 @@ describe('DomainOptionalReference', () => {
   describe('Stack Format Validation', () => {
     it('should throw error for invalid stack format', () => {
       expect(() => {
-        new ReferenceWithoutDomain({
-          stack: 'invalid-format',
-        });
-      }).toThrow("Stack must be in 'organization/project/environment' format (e.g. 'organization/base/dev')");
+        new ReferenceWithoutDomain({ stack: 'invalid-format' });
+      }).toThrow(
+        "Stack must be in 'organization/project/environment' format (e.g. 'organization/base/dev')"
+      );
     });
 
     it('should accept valid stack format', () => {
       expect(() => {
-        new ReferenceWithoutDomain({
-          stack: 'organization/base/dev',
-        });
+        new ReferenceWithoutDomain({ stack: 'organization/base/dev' });
       }).not.toThrow();
     });
+  });
+});
+
+describe('Domain-optional mode via CloudInfraReference directly', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    CloudInfraReference.clearCache();
+    primeOutputs({ testAccount: 'test@example.com' });
+  });
+
+  it('resolves a flat string output through the merged path', () => {
+    const ref = new CloudInfraReference('organization/cms/prod');
+    expect(ref.get('testAccount').email).toBe('test@example.com');
+    expect(ref.get('testAccount').member).toBe(
+      'serviceAccount:test@example.com'
+    );
+  });
+
+  it('getIdentifier omits the domain segment in domain-optional mode', () => {
+    const ref = new CloudInfraReference('organization/cms/prod');
+    expect(ref.getIdentifier('testAccount')).toBe('cms-testAccount-prod');
+    expect(ref.get('testAccount').identifier).toBe('cms-testAccount-prod');
+  });
+
+  it('rejects a per-lookup { domain } on a domain-optional reference', () => {
+    const ref = new CloudInfraReference('organization/cms/prod');
+    expect(() => ref.get('testAccount', { domain: 'au' }).email).toThrow(
+      /domain-optional reference/
+    );
+  });
+
+  it('all() lists every flat string output', () => {
+    primeOutputs({
+      a: 'a@example.com',
+      b: 'serviceAccount:b@example.com',
+      notAString: 123,
+    });
+    const ref = new CloudInfraReference('organization/cms/prod');
+    const entries = ref.all() as unknown as Array<{
+      name: string;
+      record: { email?: string };
+    }>;
+    // The non-string output is filtered out.
+    expect(entries.map(e => e.name).sort()).toEqual(['a', 'b']);
+    expect(entries.find(e => e.name === 'a')?.record.email).toBe(
+      'a@example.com'
+    );
   });
 });

@@ -30,6 +30,9 @@ export type {
   ReferenceDomain,
   ReferenceWithDomainConfig,
   ReferenceWithoutDomainConfig,
+  ReferenceOptions,
+  ReferenceGetOptions,
+  ReferenceRecord,
   StackOutputs,
   ResourceOutput,
 } from './types';
