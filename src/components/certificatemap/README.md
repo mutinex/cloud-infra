@@ -128,28 +128,28 @@ const frontendCert = multiCert.getManagedCertificate('frontend');
 const apiCert = multiCert.getManagedCertificate('api');
 ```
 
-### 4. Meta-first construction (deprecated, back-compat)
+### 4. Global preview map with a project override
 
-> **@deprecated** Prefer the name-first form above. Meta-first is retained for
-> backward compatibility and produces **identical** resources. Use it for
-> meta-only concepts such as `gcpProject` (project override) that have no
-> name-first equivalent.
+`gcpProject` maps to the name-first `project:` config field, and a preview name
+is selected with `naming: { preview: '<token>' }` (preview wins over the
+location formula, producing `prefix-name-hash7`).
 
 ```ts
-const globalCertMeta = new CloudInfraMeta({
-  name: 'global-certs',
-  omitDomain: true, // global resources
-  gcpProject: 'my-project',
-  preview: 'dev',
-});
-
-const globalCert = new CloudInfraCertificateMap(globalCertMeta, {
+const globalCert = new CloudInfraCertificateMap('global-certs', {
+  naming: { preview: 'dev' }, // prefix-name-hash7(dev)
+  project: 'my-project', // maps to meta's gcpProject
   certificates: [
     { name: 'api', domains: ['api.organization.co'], wildcard: true },
   ],
   cloudflareZoneId: 'your-cloudflare-zone-id',
 });
 ```
+
+> **@deprecated** Meta-first construction (`new CloudInfraCertificateMap(meta, config)`)
+> is retained for backward compatibility and produces **identical** resources.
+> The only reason to reach for it is `overrideNamingRules` (a `CloudInfraMeta`
+> schema field with no name-first/config equivalent); `gcpProject` and the
+> `omit*` flags all have name-first equivalents (`project:` / `naming`).
 
 ---
 
