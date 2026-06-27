@@ -49,7 +49,12 @@ backendservice/instance/certificatemap), an Outputs section everywhere documenti
 (`getFlatOutputs()`), `core/output` rewritten around the flat wire, `core/reference` re-led with the
 `get(name,{type?,domain?})` API (legacy getters marked `@deprecated`). The pass also removed pre-existing
 **fabricated** docs (a non-existent `validation.ts` section + `ReferenceError` in `core/README`, and
-`getTagValue()` calls in the tag README). `docs/v2-MIGRATION.md` holds the v1→v2 consumer runbook.
+`getTagValue()` calls in the tag README). A follow-up sweep then **converted residual meta-first code
+examples to name-first** in every name-first-capable README (`new CloudInfraMeta(` now survives ONLY in
+core/meta's own doc, the meta-first-only trio folder/pam/tag, the raw `record()` example in core/output,
+and a single labeled `overrideNamingRules` meta-only demo) — and corrected the false "gcpProject has no
+name-first equivalent" prose (`gcpProject` → name-first config `project:`). `docs/v2-MIGRATION.md` holds
+the v1→v2 consumer runbook.
 
 **→ Chosen rollout strategy (user, 2026-06-28):** keep `v2` as a long-lived BRANCH (do NOT merge to
 `main` yet); publish **preview/prerelease npm packages** off `v2` (a preview dist-tag that auto-updates
@@ -100,7 +105,7 @@ preview gate (needs creds agents lack) and does the merge.
 - **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
   AND committed on `v2`. Keep both updated.
 
-## 4. CURRENT STATE (v2 @ 349ded8, pushed to origin/v2, 450 green — all PREVIEW-ONLY, no apply ever run)
+## 4. CURRENT STATE (v2 @ e018f9c, pushed to origin/v2, 450 green — all PREVIEW-ONLY, no apply ever run)
 MERGED & validated:
 - **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
   (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases
