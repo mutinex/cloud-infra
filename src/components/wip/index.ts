@@ -27,7 +27,11 @@ import { withDefaults } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
 import { gcpConfig } from '../../config';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Workload Identity Pool component. */
 export const WIP_TYPE = 'cloud-infra:wip:CloudInfraWIP';
@@ -42,16 +46,63 @@ export type CloudInfraWIPConfig = Omit<
   project?: pulumi.Input<string>;
 };
 
+/**
+ * Name-first construction args for `CloudInfraWIP` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the pool config
+ * ({@link CloudInfraWIPConfig}) into a single args object. The naming fields are
+ * resolved into a `CloudInfraMeta` internally (identical `generateName` output,
+ * Frozen Contract F1); the remaining fields are passed straight through.
+ */
+export type CloudInfraWIPArgs = NamingArgs & CloudInfraWIPConfig;
+
 export class CloudInfraWIP extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly pool: gcp.iam.WorkloadIdentityPool;
   private readonly inputName: string;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the pool config are folded
+   * into a single args object; the name is resolved into a `CloudInfraMeta`
+   * internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args?: CloudInfraWIPArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraWIP(name, args, opts)`. Retained for backward compatibility;
+   * produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraWIPConfig = {},
+    cloudInfraConfig?: CloudInfraWIPConfig,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraWIPArgs | CloudInfraWIPConfig = {},
     opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // pool config passed straight through.
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: CloudInfraWIPConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraWIPArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      cloudInfraConfig = rest;
+    } else {
+      meta = nameOrMeta;
+      cloudInfraConfig = argsOrConfig as CloudInfraWIPConfig;
+    }
+
     const resourceNameForSuper = meta.getName();
     super(
       WIP_TYPE,
@@ -154,17 +205,66 @@ export type CloudInfraWIPProviderConfig = Omit<
   workloadIdentityPoolId?: pulumi.Input<string>;
 };
 
+/**
+ * Name-first construction args for `CloudInfraWIPProvider` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the provider config
+ * ({@link CloudInfraWIPProviderConfig}) into a single args object. The naming
+ * fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields (including
+ * `pool` / `workloadIdentityPoolId`) are passed straight through.
+ */
+export type CloudInfraWIPProviderArgs = NamingArgs &
+  CloudInfraWIPProviderConfig;
+
 export class CloudInfraWIPProvider extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly provider: gcp.iam.WorkloadIdentityPoolProvider;
   private readonly poolName: pulumi.Output<string>;
   private readonly inputName: string;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the provider config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args: CloudInfraWIPProviderArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraWIPProvider(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     cloudInfraConfig: CloudInfraWIPProviderConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraWIPProviderArgs | CloudInfraWIPProviderConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // provider config passed straight through.
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: CloudInfraWIPProviderConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraWIPProviderArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      cloudInfraConfig = rest;
+    } else {
+      meta = nameOrMeta;
+      cloudInfraConfig = argsOrConfig as CloudInfraWIPProviderConfig;
+    }
+
     const resourceNameForSuper = meta.getName();
     super(
       WIP_PROVIDER_TYPE,

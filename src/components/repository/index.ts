@@ -26,7 +26,11 @@ import { CloudInfraOutput } from '../../core/output';
 import { withDefaults } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 export type CloudInfraRepositoryConfig = Omit<
   gcp.artifactregistry.RepositoryArgs,
@@ -37,6 +41,28 @@ export type CloudInfraRepositoryConfig = Omit<
   format?: pulumi.Input<string>;
 };
 
+/**
+ * Name-first construction args for `CloudInfraRepository` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the repository config
+ * ({@link CloudInfraRepositoryConfig}) into a single args object. The naming
+ * fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining config fields are
+ * passed straight through.
+ *
+ * NB: `location` is `Omit`-ted from the config side because it also exists on
+ * {@link NamingArgs} (the two have different types — naming `location` is the
+ * meta input, config `location` was a `pulumi.Input<string>`). In the
+ * name-first surface `location` is NAMING metadata: it feeds `meta.getLocation()`,
+ * which is exactly what the repository uses for the resource location, so the
+ * single `location` here drives the deployed location. The legacy config-level
+ * `location` override (setting a resource location DIFFERENT from the naming
+ * location) is only reachable via the deprecated meta-first overload.
+ */
+export type CloudInfraRepositoryArgs = NamingArgs &
+  Omit<CloudInfraRepositoryConfig, 'location'>;
+
 /** Pulumi type token for the Artifact Registry repository component. */
 export const REPOSITORY_TYPE = 'cloud-infra:repository:Repository';
 
@@ -45,11 +71,47 @@ export class CloudInfraRepository extends CloudInfraComponent {
   private readonly repository: gcp.artifactregistry.Repository;
   private readonly inputName: string;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the repository config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args?: CloudInfraRepositoryArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraRepository(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraRepositoryConfig = {},
+    cloudInfraConfig?: CloudInfraRepositoryConfig,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraRepositoryArgs | CloudInfraRepositoryConfig = {},
     opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // repository config passed straight through.
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: CloudInfraRepositoryConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraRepositoryArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      cloudInfraConfig = rest;
+    } else {
+      meta = nameOrMeta;
+      cloudInfraConfig = argsOrConfig as CloudInfraRepositoryConfig;
+    }
+
     const resourceName = meta.getName();
 
     super(

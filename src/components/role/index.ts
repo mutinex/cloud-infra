@@ -4,7 +4,11 @@ import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /**
  * Custom IAM **Role** component.
@@ -48,6 +52,18 @@ export type CloudInfraRoleConfig =
   | CloudInfraProjectRoleConfig
   | CloudInfraOrgRoleConfig;
 
+/**
+ * Name-first construction args for `CloudInfraRole` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the role config
+ * ({@link CloudInfraRoleConfig}) into a single args object. The naming fields
+ * are resolved into a `CloudInfraMeta` internally (identical `generateName`
+ * output, Frozen Contract F1); the remaining fields are passed straight through
+ * as the role config. The distribution over the project/org union is preserved.
+ */
+export type CloudInfraRoleArgs = NamingArgs & CloudInfraRoleConfig;
+
 /** Pulumi type token for the custom IAM role component. */
 export const ROLE_TYPE = 'cloud-infra:role:CloudInfraRole';
 
@@ -89,11 +105,51 @@ export class CloudInfraRole extends CloudInfraComponent {
   private readonly fullName: string;
   private readonly inputName: string;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the role config are folded
+   * into a single args object; the name is resolved into a `CloudInfraMeta`
+   * internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args: CloudInfraRoleArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraRole(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     cloudInfraConfig: CloudInfraRoleConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraRoleArgs | CloudInfraRoleConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // role config passed straight through.
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: CloudInfraRoleConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraRoleArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      // `CloudInfraRoleConfig` is a discriminated union; the rest-spread of
+      // `NamingArgs & (Project | Org)` loses the union narrowing, so a cast is
+      // needed. It is sound — the four naming keys are disjoint from both union
+      // members, so removing them leaves a structurally valid role config.
+      cloudInfraConfig = rest as CloudInfraRoleConfig;
+    } else {
+      meta = nameOrMeta;
+      cloudInfraConfig = argsOrConfig as CloudInfraRoleConfig;
+    }
+
     const name = resolveRoleName(meta);
 
     // Register the component node. The custom-role child parents under `this`.

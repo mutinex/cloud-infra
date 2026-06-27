@@ -9,6 +9,7 @@ import {
   CloudInfraAccountConfig,
   CloudInfraAccountBase,
 } from './common';
+import { resolveMeta, type NamingArgs } from '../../core/component';
 
 /**
  * A lightweight wrapper around a single Google Cloud Service-Account that
@@ -54,6 +55,19 @@ export interface CloudInfraAccountIamMemberIdentity {
 /** Pulumi type token for the single service-account component. */
 export const ACCOUNT_TYPE = 'cloud-infra:account:CloudInfraAccount';
 
+/**
+ * Name-first construction args for `CloudInfraAccount` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the account config
+ * ({@link CloudInfraAccountConfig}) into a single args object, so an account can
+ * be built as `new CloudInfraAccount("application", { domain: "au" })`. The
+ * naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the account config.
+ */
+export type CloudInfraAccountArgs = NamingArgs & CloudInfraAccountConfig;
+
 export class CloudInfraAccount extends CloudInfraAccountBase {
   private meta: CloudInfraMeta;
   public readonly serviceAccount: gcp.serviceaccount.Account;
@@ -62,6 +76,20 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
   private iamMembers: gcp.serviceaccount.IAMMember[] = [];
 
   /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the account config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args?: CloudInfraAccountArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraAccount(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
    * @param meta - CloudInfra meta information for naming/tagging.
    * @param config - Configuration that is passed through to the underlying Pulumi resource.
    */
@@ -69,7 +97,27 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
     meta: CloudInfraMeta,
     config?: CloudInfraAccountConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraAccountArgs | CloudInfraAccountConfig = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // account config passed straight through.
+    let meta: CloudInfraMeta;
+    let config: CloudInfraAccountConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraAccountArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraAccountConfig;
+    }
+
     const componentName = meta.getName();
 
     // Register the component node. Children parent under `this`. The generated

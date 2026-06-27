@@ -17,7 +17,11 @@ import { CloudInfraOutput } from '../../core/output';
 
 // Error handling
 import { ValidationError } from '../../core/errors';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Cloud SQL user component. */
 export const DATABASE_USER_TYPE = 'cloud-infra:database:DatabaseUser';
@@ -34,17 +38,66 @@ export type CloudInfraDatabaseUserConfig = Omit<
 };
 
 /**
+ * Name-first construction args for `CloudInfraDatabaseUser` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the user config
+ * ({@link CloudInfraDatabaseUserConfig}) into a single args object. The naming
+ * fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the user config.
+ */
+export type CloudInfraDatabaseUserArgs = NamingArgs &
+  CloudInfraDatabaseUserConfig;
+
+/**
  * Component that manages a single database user (standard or IAM).
  */
 export class CloudInfraDatabaseUser extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly user: gcp.sql.User;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the user config are folded
+   * into a single args object; the name is resolved into a `CloudInfraMeta`
+   * internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args: CloudInfraDatabaseUserArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraDatabaseUser(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraDatabaseUserConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraDatabaseUserArgs | CloudInfraDatabaseUserConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // user config passed straight through.
+    let meta: CloudInfraMeta;
+    let config: CloudInfraDatabaseUserConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraDatabaseUserArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraDatabaseUserConfig;
+    }
+
     const resourceName = meta.getName();
 
     super(

@@ -11,7 +11,11 @@ import { ValidationError } from '../../core/errors';
 
 // Helpers
 import { deriveRegion } from '../../core/helpers';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Cloud SQL instance component. */
 export const DATABASE_INSTANCE_TYPE = 'cloud-infra:database:DatabaseInstance';
@@ -43,6 +47,19 @@ export type CloudInfraDatabaseInstanceConfig = Omit<
 };
 
 /**
+ * Name-first construction args for `CloudInfraDatabaseInstance` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the instance config
+ * ({@link CloudInfraDatabaseInstanceConfig}) into a single args object. The
+ * naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the instance config.
+ */
+export type CloudInfraDatabaseInstanceArgs = NamingArgs &
+  CloudInfraDatabaseInstanceConfig;
+
+/**
  * Component that manages a single Cloud SQL instance.
  *
  * @example Create a minimal Postgres 15 instance
@@ -58,11 +75,49 @@ export class CloudInfraDatabaseInstance extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly instance: gcp.sql.DatabaseInstance;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the instance config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args: CloudInfraDatabaseInstanceArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraDatabaseInstance(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraDatabaseInstanceConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig:
+      | CloudInfraDatabaseInstanceArgs
+      | CloudInfraDatabaseInstanceConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // instance config passed straight through.
+    let meta: CloudInfraMeta;
+    let config: CloudInfraDatabaseInstanceConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraDatabaseInstanceArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraDatabaseInstanceConfig;
+    }
+
     const resourceName = meta.getName();
 
     super(
