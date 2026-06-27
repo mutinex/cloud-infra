@@ -30,14 +30,12 @@ export {
 
 // Export registries for advanced usage
 export { ResourceRegistry } from './resources/resource-registry';
-export { IamBuilderRegistry } from './builders/iam-builder-registry';
 export { PrincipalFactory } from './principals/principal-factory';
 
 // Export configuration for external access
 export { accessMatrixConfig } from '../../config';
 
-// Export builder interfaces for extensibility
-export type { IamBuilder } from './builders/iam-builder-registry';
+// Export principal resolver interface for extensibility
 export type { PrincipalResolver } from './principals/principal-types';
 
 // Initialize the system on import

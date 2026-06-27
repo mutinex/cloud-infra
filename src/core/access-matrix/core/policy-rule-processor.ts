@@ -12,7 +12,7 @@ import {
 import { AccessMatrixConfig, ResolvedPrincipal } from '../types/common-types';
 import { PrincipalFactory } from '../principals/principal-factory';
 import { ResourceRegistry } from '../resources/resource-registry';
-import { IamBuilderRegistry } from '../builders/iam-builder-registry';
+import { createIamBinding } from '../builders/iam-binding';
 import { hasMethod } from '../../helpers';
 import { CloudInfraLogger } from '../../logging';
 import { accessMatrixConfig } from '../../../config';
@@ -221,7 +221,7 @@ export class PolicyRuleProcessor {
       resourceKey
     );
 
-    return IamBuilderRegistry.createIamBinding(resourceType, {
+    return createIamBinding(resourceType, {
       resource: rule.resource,
       role: normalizedRole,
       member: resolvedPrincipal.member,
