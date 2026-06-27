@@ -4,17 +4,39 @@ This module provides a robust solution for managing and structuring Pulumi resou
 
 The core component is the `CloudInfraOutput`, a class that records resource details and emits them on **two wires** simultaneously:
 
-- **Flat wire (v2, recommended)** — `getFlatOutputs()` returns a `FlatOutputRecord[]`: a flat array of self-describing records, each carrying its `key` / `type` / `domain` addressing **inline** alongside the resource fields.
+- **Flat wire (v2, recommended)** — `getFlatOutputs()` returns a flat, single-level **keyed map** `Record<string, pulumi.Output<string>>`. Each entry is **one scalar field**, keyed `<domain>.<service>[.<region>].<name>.<field>` (separator `.`). Because every key is a top-level scalar, spreading the map onto the module's exports makes each composed key its own **top-level stack output**, readable in one hop with a plain `pulumi.StackReference.requireOutput("<key>")`.
 - **Nested wire (legacy, retained for back-compat)** — `getOutputs()` returns the original `data[domain][resourceType][groupingKey]` nested map. It is still emitted unchanged.
 
 Every call to `record()` writes to **both** wires. The flat emission is purely additive — it **never** replaces the nested map.
 
 ## Key Features
 
-- **Flat, self-describing outputs (v2)**: each record fully describes itself (`key`, `type`, `domain` inline), so consumers filter/map over an array instead of walking three levels of nesting.
+- **Flat keyed-map outputs (v2)**: one scalar `pulumi.Output<string>` per composed key, so a legacy consumer can read a single value via `requireOutput("gl.sa.mtx-dev-gha.member")` with no nested walking.
 - **Dual emission**: the legacy nested map is emitted alongside the flat wire, so existing consumers keep working with no change.
-- **Selective Recording**: captures only the defined fields from a resource (`id` is always present; `name` and the optional fields are included only when defined).
+- **Scalar-only**: only scalar string fields become keys (`id`, `name`, `email`, `member`, `roleId`, `location`, `uri`, `projectId`, `address`, `number`, `version`). Non-scalar fields (`urls` array, `customPlacementConfig` object) are **excluded** from the flat map and remain on the nested wire only. `Output<number>` (e.g. a project number) is coerced to `Output<string>`.
+- **Collision-safe**: if two recorded resources would compose the same key, `record()` **throws** at construction time naming the colliding key.
 - **Component integration**: every `@mutinex/cloud-infra` component exposes `.exportOutputs(manager)`, which calls `record()` for you with the correct type/grouping.
+
+### Key grammar
+
+```
+<domain> . <service> [. <region>] . <name> . <field>
+```
+
+- **domain** — `meta.getDomain()` (`au` / `us` / `gl`).
+- **service** — a short alias for the resource type (e.g. `gcp:serviceaccount:Account` → `sa`, `gcp:storage:Bucket` → `bucket`, `gcp:compute:Subnetwork` → `subnet`, `gcp:cloudrunv2:Service` → `run`). The full `type → alias` table is `serviceAliasMap` in `core/reference/config.ts`; the reverse `alias → type` table (`resourceTypeMap`) is what the reader's `{ type }` disambiguator accepts.
+- **region** — present **only** for regional resources (the recorded entry carries a `location`). Global resources (service account, folder, project, WIP) **omit** it. A single region is shortened via `getRegionCode()` (`us-central1` → `us-c1`, `australia-southeast1` → `au-se1`); a **multi-/dual-region** location uses its canonical GCP token verbatim (`us`, `eu`, `au`, `nam4`, …) — a deterministic, collision-stable choice.
+- **name** — the grouping key passed to `record()`.
+- **field** — the scalar field name (`id`, `email`, `member`, …).
+
+Example keys:
+
+```
+gl.sa.mtx-dev-gha.member            # global service account, member field
+us.subnet.us-c1.services.id         # regional subnet in us-central1, id field
+au.bucket.au-se1.archive.location   # regional bucket in australia-southeast1
+gl.project.host.number              # global project, number (coerced to string)
+```
 
 ## Installation
 
@@ -26,7 +48,7 @@ npm install @mutinex/cloud-infra
 
 ## The recommended v2 pattern
 
-Construct an output manager, let each component record itself via `exportOutputs()`, then export the **flat wire** as the primary output. The nested wire is exported alongside for back-compat.
+Construct an output manager, let each component record itself via `exportOutputs()`, then publish the **flat keyed map**. There are two ways to publish it:
 
 ```ts
 import { CloudInfraOutput } from '@mutinex/cloud-infra';
@@ -36,9 +58,21 @@ const out = new CloudInfraOutput();
 // Each component records itself (calls `record()` internally).
 myComponent.exportOutputs(out);
 
-export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
-export const org = out.getOutputs(); // legacy nested wire (still emitted)
+// (A) TOP-LEVEL outputs — each composed key becomes its own stack output, so a
+//     legacy consumer can read one value in a single hop:
+//       pulumi.StackReference.requireOutput("gl.sa.mtx-dev-gha.member")
+Object.assign(exports, out.getFlatOutputs());
+
+// (B) …or expose the whole map under ONE nested output:
+export const cloudInfra = out.getFlatOutputs();
+
+// The legacy nested wire is still emitted alongside, unchanged:
+export const org = out.getOutputs();
 ```
+
+> Pick **(A)** when downstream stacks read individual values with a plain
+> `requireOutput("<key>")`. Pick **(B)** when a single `CloudInfraReference(..., { flat: true })`
+> consumer reads the map. You can also do both (they do not conflict).
 
 > **Prefer components over raw resources.** Construct components with the
 > name-first form (`new CloudInfraAccount("my-app", { domain: "au" })`) and call
@@ -81,8 +115,10 @@ if (growthosRepo) {
   growthosRepo.exportOutputs(orgOutput);
 }
 
-// v2 flat wire (recommended), plus the legacy nested wire for back-compat.
-export const cloudInfra = orgOutput.getFlatOutputs();
+// v2 flat keyed map. Spread onto exports for one-hop `requireOutput("<key>")`,
+// or `export const cloudInfra = orgOutput.getFlatOutputs()` for one nested
+// output. The legacy nested wire is emitted alongside for back-compat.
+Object.assign(exports, orgOutput.getFlatOutputs());
 export const org = orgOutput.getOutputs();
 ```
 
@@ -113,7 +149,7 @@ if (templateConfig.createPreviewCertificates) {
   certsPreviewGlobal!.exportOutputs(growthosOutput);
 }
 
-export const cloudInfra = growthosOutput.getFlatOutputs();
+Object.assign(exports, growthosOutput.getFlatOutputs());
 export const org = growthosOutput.getOutputs();
 ```
 
@@ -166,17 +202,16 @@ export const org = out.getOutputs();
 
 Records a resource on both wires. `resourceType` categorises the resource (use the full Pulumi type token, e.g. `"gcp:serviceaccount:Account"`, so flat-wire `type` matches the reference reader's alias table), `groupingKey` groups resources of the same type (e.g. `"primary"`), `meta` supplies the domain via `meta.getDomain()`, and `resource` is the Pulumi resource.
 
-### `getFlatOutputs(): FlatOutputRecord[]`
+### `getFlatOutputs(): Record<string, pulumi.Output<string>>`
 
-Returns the **v2 flat wire**: an array of self-describing records, in `record()` insertion order. Each `FlatOutputRecord` extends `OutputResourceEntry` (the resource fields) and adds the inline addressing:
-
-| Field    | Meaning                                                            |
-| :------- | :---------------------------------------------------------------- |
-| `key`    | The grouping key the resource was recorded under.                 |
-| `type`   | The resource type, e.g. `"gcp:serviceaccount:Account"`.           |
-| `domain` | The domain (from `meta.getDomain()`), e.g. `"au"`.                |
-| `id`     | Always present.                                                   |
-| `name`, `email`, `member`, `projectId`, `roleId`, `location`, `uri`, `address`, `number`, `version`, `urls`, `customPlacementConfig` | Included only when defined on the source resource. |
+Returns the **v2 flat keyed map** — one entry per scalar field, keyed
+`<domain>.<service>[.<region>].<name>.<field>` (see [Key grammar](#key-grammar)).
+Scalar fields only: `id` (always present when defined on the resource) plus
+`name`, `roleId`, `email`, `location`, `member`, `uri`, `projectId`, `address`,
+`number`, `version` when defined. `Output<number>` is coerced to
+`Output<string>`. The non-scalar `urls` / `customPlacementConfig` fields are
+**excluded** (nested wire only). A composed-key collision **throws** at
+`record()` time.
 
 ### `getOutputs(): Record<domain, Record<resourceType, Record<groupingKey, OutputResourceEntry>>>`
 
@@ -186,21 +221,28 @@ Returns the **legacy nested wire**. Retained for back-compat; still emitted on e
 
 ### Flat wire (`getFlatOutputs()`)
 
-The flat wire is an array. A service account recorded as `record("gcp:serviceaccount:Account", "primary", metaUs, sa)` produces an element like:
+The flat wire is a single-level keyed map. A service account recorded as `record("gcp:serviceaccount:Account", "primary", metaUs, sa)` (a **global** resource, so no region segment) produces:
 
 ```json
-[
-  {
-    "key": "primary",
-    "type": "gcp:serviceaccount:Account",
-    "domain": "us",
-    "id": "projects/your-gcp-project/serviceAccounts/...",
-    "name": "your-pulumi-project-app-runner-us",
-    "email": "your-pulumi-project-app-runner-us@your-gcp-project.iam.gserviceaccount.com",
-    "projectId": "your-gcp-project"
-  }
-]
+{
+  "us.sa.primary.id": "projects/your-gcp-project/serviceAccounts/...",
+  "us.sa.primary.name": "your-pulumi-project-app-runner-us",
+  "us.sa.primary.email": "your-pulumi-project-app-runner-us@your-gcp-project.iam.gserviceaccount.com",
+  "us.sa.primary.projectId": "your-gcp-project"
+}
 ```
+
+A **regional** resource, e.g. `record("gcp:compute:Subnetwork", "services", metaUsCentral1, subnet)`, adds the region segment:
+
+```json
+{
+  "us.subnet.us-c1.services.id": "projects/.../subnetworks/...",
+  "us.subnet.us-c1.services.name": "your-pulumi-project-services-us-c1",
+  "us.subnet.us-c1.services.location": "us-central1"
+}
+```
+
+Spread onto the module's exports (`Object.assign(exports, out.getFlatOutputs())`), each key becomes a top-level stack output, so a consumer reads one value in a single hop: `stackRef.requireOutput("us.sa.primary.email")`.
 
 ### Nested wire (`getOutputs()`, legacy)
 

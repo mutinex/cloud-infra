@@ -8,7 +8,7 @@ The primary export is `CloudInfraReference`, a class designed to work with stack
 
 - **The `get()` API (v2)**: `ref.get("name").field` — resolve a resource by name and read `id` / `name` / `email` / `member` / `projectId` / `version`, plus a deterministic `identifier` and a `raw` escape hatch.
 - **Cross-type scan**: when you don't pass a `type`, `get()` scans every resource type under the resolved domain and returns the single match (throwing a helpful, copy-pasteable error if a name is ambiguous).
-- **Flat-wire reader**: with `{ flat: true }`, reads the v2 `getFlatOutputs()` self-describing record array; without it, reads the legacy nested wire.
+- **Flat-wire reader**: with `{ flat: true }`, reads the v2 `getFlatOutputs()` keyed map (re-assembling a record by grouping keys that share a `<domain>.<service>[.<region>].<name>` prefix); without it, reads the legacy nested wire.
 - **Domain-optional mode**: omit `domain` to read flat `root[name]` string outputs (e.g. a service-account email/member).
 - **Resource Aliases**: use short aliases (e.g. `sa`, `bucket`) instead of full Pulumi type strings.
 - **Automatic Caching**: caches `StackReference` instances across a single deployment.
@@ -55,16 +55,28 @@ const usSaEmail = foundation.get('my-app', { domain: 'us' }).email;
 
 ### Reading the v2 flat wire
 
-If the source stack exports `CloudInfraOutput.getFlatOutputs()`, construct the reference with `{ flat: true }`. The reader scans the `FlatOutputRecord[]` array, matching by `key` with the same optional `{ type, domain }` disambiguators (cross-record scan mirrors the nested cross-type scan). An empty/omitted domain means "match any domain".
+If the source stack exports `CloudInfraOutput.getFlatOutputs()` under a single nested output, construct the reference with `{ flat: true }`. The reader reads the keyed map and **re-assembles a record** by grouping every key that shares a `<domain>.<service>[.<region>].<name>` prefix, then matches by `name` with the same optional `{ type, domain }` disambiguators (cross-record scan mirrors the nested cross-type scan). The `type` disambiguator (a short alias like `bucket` or a full Pulumi type) is resolved to the key's `service` segment. An empty/omitted domain means "match any domain".
 
 ```typescript
 const ref = new CloudInfraReference('mutiny-group/foundation/prd', {
   domain: 'au',
-  flat: true, // read the getFlatOutputs() array
+  flat: true, // read the getFlatOutputs() keyed map
 });
 
 export const saEmail = ref.get('my-app').email;
 ```
+
+> **Reading a single top-level key directly.** If the producer instead spread
+> the map onto its exports (`Object.assign(exports, out.getFlatOutputs())`),
+> every composed key is its own top-level stack output. A legacy consumer can
+> then read one value in a single hop with a plain `pulumi.StackReference`,
+> bypassing `CloudInfraReference` entirely:
+>
+> ```typescript
+> import * as pulumi from '@pulumi/pulumi';
+> const stack = new pulumi.StackReference('mutiny-group/foundation/prd');
+> export const saMember = stack.requireOutput('gl.sa.mtx-dev-gha.member');
+> ```
 
 ### Listing every record
 
