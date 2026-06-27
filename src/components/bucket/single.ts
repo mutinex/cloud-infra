@@ -8,8 +8,8 @@ import {
   tryGetDualRegionLocation,
   GcpDualRegions,
 } from '../../core/meta/locations';
-import { CloudInfraBucketConfig } from './common';
-import { CloudInfraComponent } from '../../core/component';
+import { CloudInfraBucketConfig, CloudInfraBucketArgs } from './common';
+import { CloudInfraComponent, resolveMeta } from '../../core/component';
 
 /** Pulumi type token for the single-bucket component. */
 export const BUCKET_TYPE = 'cloud-infra:bucket:Bucket';
@@ -39,6 +39,16 @@ export const BUCKET_TYPE = 'cloud-infra:bucket:Bucket';
  * });
  * const bucket = new CloudInfraBucket(meta, { forceDestroy: true });
  * ```
+ *
+ * @example Name-first (v2 DX, preferred)
+ * ```ts
+ * const bucket = new CloudInfraBucket("assets", { domain: "au" });
+ * const logs = new CloudInfraBucket("logs", {
+ *   domain: "us",
+ *   location: ["us-central1", "us-east1"],
+ *   forceDestroy: true,
+ * });
+ * ```
  */
 export class CloudInfraBucket extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
@@ -46,11 +56,47 @@ export class CloudInfraBucket extends CloudInfraComponent {
   /** Validated single input name (array inputs are invalid for single bucket). */
   private readonly inputName: string;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the bucket config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args?: CloudInfraBucketArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraBucket(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraBucketConfig = {},
+    cloudInfraConfig?: CloudInfraBucketConfig,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraBucketArgs | CloudInfraBucketConfig = {},
     opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // bucket config passed straight through.
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: CloudInfraBucketConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...config } =
+        argsOrConfig as CloudInfraBucketArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      cloudInfraConfig = config;
+    } else {
+      meta = nameOrMeta;
+      cloudInfraConfig = argsOrConfig as CloudInfraBucketConfig;
+    }
+
     const componentName = meta.getName();
 
     super(
