@@ -3,6 +3,8 @@ import * as gcp from '@pulumi/gcp';
 import { IamBindingParams } from '../types/common-types';
 import { ResourceNotSupportedError } from '../types/common-types';
 import { hasMethod, hasProperty } from '../../helpers';
+import { accessMatrixConfig } from '../../../config';
+import { CloudInfraLogger } from '../../logging';
 
 // ---------------------------------------------------------------------------
 // Resource type unions (carried over verbatim from the former per-type builders)
@@ -793,31 +795,44 @@ function buildRepositoryIamBinding(
 // ---------------------------------------------------------------------------
 
 /**
- * The set of Pulumi type tokens this function knows how to bind IAM members
- * for. Surfaced in the {@link ResourceNotSupportedError} message to preserve
- * the prior "Available types: ..." diagnostic.
+ * Single source of truth mapping each supported Pulumi type token to the
+ * per-type builder that constructs its `gcp.*IAMMember` / `gcp.*IamMember`
+ * resource.
+ *
+ * This one table drives BOTH:
+ *  - dispatch in {@link createIamBinding} (lookup by `resourceType`), and
+ *  - the "Available types: ..." diagnostic in the
+ *    {@link ResourceNotSupportedError} (via `Object.keys`),
+ * so the supported-type list can never drift from the dispatch behaviour.
+ *
+ * Insertion order is preserved by `Object.keys`, so the error message lists the
+ * types in the same order the former `SUPPORTED_RESOURCE_TYPES` array did.
  */
-const SUPPORTED_RESOURCE_TYPES: readonly string[] = [
-  'gcp:organizations/project:Project',
-  'gcp:organizations/folder:Folder',
-  'gcp:serviceaccount/account:Account',
-  'gcp:storage/bucket:Bucket',
-  'gcp:cloudrunv2/job:Job',
-  'gcp:cloudrunv2/service:Service',
-  'gcp:compute/subnetwork:Subnetwork',
-  'gcp:compute/instance:Instance',
-  'gcp:secretmanager/secret:Secret',
-  'gcp:secretmanager/regionalSecret:RegionalSecret',
-  'gcp:artifactregistry/repository:Repository',
-];
+const IAM_BINDING_BUILDERS: Record<
+  string,
+  (params: IamBindingParams) => pulumi.CustomResource
+> = {
+  'gcp:organizations/project:Project': buildProjectIamBinding,
+  'gcp:organizations/folder:Folder': buildFolderIamBinding,
+  'gcp:serviceaccount/account:Account': buildServiceAccountIamBinding,
+  'gcp:storage/bucket:Bucket': buildBucketIamBinding,
+  'gcp:cloudrunv2/job:Job': buildCloudRunJobIamBinding,
+  'gcp:cloudrunv2/service:Service': buildCloudRunServiceIamBinding,
+  'gcp:compute/subnetwork:Subnetwork': buildSubnetworkIamBinding,
+  'gcp:compute/instance:Instance': buildComputeInstanceIamBinding,
+  'gcp:secretmanager/secret:Secret': buildSecretIamBinding,
+  'gcp:secretmanager/regionalSecret:RegionalSecret': buildSecretIamBinding,
+  'gcp:artifactregistry/repository:Repository': buildRepositoryIamBinding,
+};
 
 /**
  * Create an IAM binding (a `gcp.*IAMMember` / `gcp.*IamMember` resource) for the
  * supplied Pulumi type token.
  *
- * This replaces the former `IamBuilderRegistry` dispatch table. Each `case`
- * inlines the resource-info extraction and the exact `new gcp.*IAMMember(...)`
- * call the corresponding per-type builder used to perform.
+ * This replaces the former `IamBuilderRegistry` dispatch table. Each builder in
+ * {@link IAM_BINDING_BUILDERS} inlines the resource-info extraction and the
+ * exact `new gcp.*IAMMember(...)` call the corresponding per-type builder used
+ * to perform.
  *
  * @param resourceType - The Pulumi type token of the target resource.
  * @param params - IAM binding parameters (resource, role, member, resourceName).
@@ -849,34 +864,33 @@ export function createIamBinding(
     throw new Error('Resource name is required for IAM binding');
   }
 
-  switch (resourceType) {
-    case 'gcp:organizations/project:Project':
-      return buildProjectIamBinding(params);
-    case 'gcp:organizations/folder:Folder':
-      return buildFolderIamBinding(params);
-    case 'gcp:serviceaccount/account:Account':
-      return buildServiceAccountIamBinding(params);
-    case 'gcp:storage/bucket:Bucket':
-      return buildBucketIamBinding(params);
-    case 'gcp:cloudrunv2/job:Job':
-      return buildCloudRunJobIamBinding(params);
-    case 'gcp:cloudrunv2/service:Service':
-      return buildCloudRunServiceIamBinding(params);
-    case 'gcp:compute/subnetwork:Subnetwork':
-      return buildSubnetworkIamBinding(params);
-    case 'gcp:compute/instance:Instance':
-      return buildComputeInstanceIamBinding(params);
-    case 'gcp:secretmanager/secret:Secret':
-      return buildSecretIamBinding(params);
-    case 'gcp:secretmanager/regionalSecret:RegionalSecret':
-      return buildSecretIamBinding(params);
-    case 'gcp:artifactregistry/repository:Repository':
-      return buildRepositoryIamBinding(params);
-    default: {
-      const availableTypes = SUPPORTED_RESOURCE_TYPES.join(', ');
-      throw new ResourceNotSupportedError(
-        `Resource type '${resourceType}' is not supported. Available types: ${availableTypes}`
+  const builder = IAM_BINDING_BUILDERS[resourceType];
+  if (!builder) {
+    const availableTypes = Object.keys(IAM_BINDING_BUILDERS).join(', ');
+    throw new ResourceNotSupportedError(
+      `Resource type '${resourceType}' is not supported. Available types: ${availableTypes}`
+    );
+  }
+
+  // Wrap dispatch in try/catch to restore the former
+  // `IamBuilderRegistry.createIamBinding` error-context behaviour: any failure
+  // from the builder is re-thrown with the resourceName + resourceType
+  // context. This only wraps errors/logs — it does NOT alter the created
+  // resource (same builder, same `new gcp.*IAMMember(...)` call/args).
+  try {
+    if (accessMatrixConfig.enableDetailedLogging) {
+      CloudInfraLogger.info(
+        `Creating IAM binding '${params.resourceName}' for resource type '${resourceType}'`,
+        { component: 'access-matrix', operation: 'iam-binding-creation' }
       );
     }
+
+    return builder(params);
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(
+      `Failed to create IAM binding '${params.resourceName}' for resource type '${resourceType}': ${errorMessage}`
+    );
   }
 }
