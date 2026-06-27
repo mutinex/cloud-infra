@@ -13,7 +13,11 @@ import { CloudInfraOutput } from '../../core/output';
 import { assertSingleRegion } from '../../core/helpers';
 import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the VPC Access Connector component. */
 export const CONNECTOR_TYPE = 'cloud-infra:network:CloudInfraConnector';
@@ -25,6 +29,18 @@ export const CloudInfraConnectorConfigSchema = z
     maxInstances: z.number().default(3),
   })
   .passthrough();
+
+/**
+ * Name-first construction args for `CloudInfraConnector` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the Pulumi connector args
+ * (`gcp.vpcaccess.ConnectorArgs`) into a single args object. The naming fields
+ * are resolved into a `CloudInfraMeta` internally (identical `generateName`
+ * output, Frozen Contract F1); the remaining fields are passed straight through
+ * as the connector config exactly as the meta-first path.
+ */
+export type CloudInfraConnectorArgs = NamingArgs & gcp.vpcaccess.ConnectorArgs;
 
 /**
  * Creates a Google Cloud VPC Access Connector with a name and region derived
@@ -60,11 +76,55 @@ export class CloudInfraConnector extends CloudInfraComponent {
    * `gcp.vpcaccess.ConnectorArgs`.
    * @param opts Optional Pulumi resource options.
    */
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the connector config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   * The Connector child name, parent, alias and preserved caller opts are
+   * derived exactly as the meta-first path.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraConnectorArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraConnector(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   *
+   * @param meta The `CloudInfraMeta` instance to derive naming and region from.
+   * @param config The configuration for the connector, extending
+   * `gcp.vpcaccess.ConnectorArgs`.
+   * @param opts Optional Pulumi resource options.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: gcp.vpcaccess.ConnectorArgs,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraConnectorArgs | gcp.vpcaccess.ConnectorArgs,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // connector config passed straight through (parsed + consumed UNCHANGED
+    // below by the Connector). `opts` is forwarded unchanged.
+    let meta: CloudInfraMeta;
+    let config: gcp.vpcaccess.ConnectorArgs;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraConnectorArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest as gcp.vpcaccess.ConnectorArgs;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as gcp.vpcaccess.ConnectorArgs;
+    }
+
     const resourceName = meta.getName();
     super(
       CONNECTOR_TYPE,
