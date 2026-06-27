@@ -42,6 +42,31 @@ export const repoId = repo.getId();
 - `getName()`: Returns `pulumi.Output<string>` of the repository name
 - `exportOutputs(manager)`: Records the repository in CloudInfraOutput
 
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+repo.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the repository under
+`gcp:artifactregistry:Repository`. See [`core/output`](../../core/output) and
+[`core/reference`](../../core/reference) for the full wire format and for
+consuming these outputs cross-stack via `ref.get(...)`.
+
+> **Meta-first (deprecated):** `new CloudInfraRepository(meta, config)` is
+> retained for backward compatibility and produces **identical** resources; the
+> name-first form shown in Quick Start is preferred. Meta-first also exposes a
+> config-level `location` override (a resource location different from the
+> naming location).
+
 ## Multi-Region Support
 
 Accepts multi-region identifiers:

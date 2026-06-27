@@ -156,6 +156,34 @@ All other fields go to the Version resource.
 
 ---
 
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+masterInstancePassword.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records both the secret and its version — under
+`gcp:secretmanager:Secret` + `gcp:secretmanager:SecretVersion` for multi/dual
+region, or `gcp:secretmanager:RegionalSecret` +
+`gcp:secretmanager:RegionalSecretVersion` for a single region. See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
+
+> **Meta-first (deprecated):** `new CloudInfraSecretVersion(meta, config)` is
+> retained for backward compatibility and produces **identical** resources; the
+> name-first form shown above is preferred.
+
+---
+
 ## Behaviour notes
 
 1. Unless you provide `secret.replication`, the component builds a **user-managed** replication set from `meta.getMultiRegion()`.
