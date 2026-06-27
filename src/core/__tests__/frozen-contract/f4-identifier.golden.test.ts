@@ -93,6 +93,22 @@ describe('F4 — CloudInfraReference.getIdentifier → `${proj}-${name}-${env}-$
     });
     expect(ref.getIdentifier('n')).toBe('B-n-C-au');
   });
+
+  it('a NESTED reference with an explicit empty domain keeps its trailing `-` (frozen)', () => {
+    // Move 4 added a `domain === ''` shortcut to getIdentifier, but it is
+    // SCOPED to flat mode. A nested (non-flat) reference constructed with an
+    // explicit `domain: ''` must still emit the historical `${proj}-${name}-${env}-`
+    // form (trailing dash) — pinning that the flat-mode change did not leak
+    // into the legacy nested path.
+    const ref = new CloudInfraReference({
+      stack: 'mutiny-group/foundation/prd',
+      domain: '',
+      outputKey: OUTPUT_KEY,
+    });
+    expect(ref.getIdentifier('default-vpc')).toBe(
+      'foundation-default-vpc-prd-'
+    );
+  });
 });
 
 describe('F4 — ReferenceWithoutDomain.getIdentifier → `${proj}-${name}-${env}` (NO domain segment)', () => {

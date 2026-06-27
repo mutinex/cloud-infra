@@ -5,6 +5,7 @@ import * as pulumi from '@pulumi/pulumi';
 import * as crypto from 'crypto';
 import { getDefaultOutputKey, resourceTypeMap } from './config';
 import type {
+  FlatStackOutput,
   ReferenceDomain,
   ReferenceGetOptions,
   ReferenceOptions,
@@ -72,6 +73,17 @@ export class CloudInfraReference {
    * @private
    */
   private readonly domainOptional: boolean;
+
+  /**
+   * When `true`, this reference resolves against the NEW flat, self-describing
+   * emission (`CloudInfraOutput.getFlatOutputs()` → a `FlatOutputRecord[]`)
+   * instead of the nested `root[domain][type][name]` wire. Set via the `flat`
+   * option. Independent of {@link domainOptional} (which reads flat STRINGS,
+   * not the structured record ARRAY). When flat mode is on, `domainOptional`
+   * is forced off so a `domain` may still scope/disambiguate flat records.
+   * @private
+   */
+  private readonly flat: boolean;
 
   /**
    * Caches `pulumi.StackReference` instances to avoid creating duplicates for
@@ -220,11 +232,13 @@ export class CloudInfraReference {
     let stack: string;
     let domain: string | undefined;
     let outputKey: string | undefined;
+    let flat = false;
 
     if (typeof stackOrConfig === 'string') {
       stack = stackOrConfig;
       domain = options?.domain;
       outputKey = options?.outputKey;
+      flat = options?.flat ?? false;
     } else {
       stack = stackOrConfig.stack;
       domain = stackOrConfig.domain;
@@ -239,10 +253,14 @@ export class CloudInfraReference {
 
     this.stack = stack;
     this.domain = { domain: domain ?? '' };
-    this.domainOptional = domain === undefined;
-    // Only consult the Pulumi config fallback when we actually use the nested
-    // wire; domain-optional mode reads `stackRef.outputs` directly and never
-    // touches the output key.
+    this.flat = flat;
+    // Flat mode reads the structured `FlatOutputRecord[]` wire, NOT the
+    // flat-string `root[name]` wire — so it is never domain-optional even when
+    // `domain` is omitted (a missing domain just means "do not scope by domain").
+    this.domainOptional = !flat && domain === undefined;
+    // The nested wire and the flat-record wire both live under an output key
+    // (so consult the Pulumi config fallback); only domain-optional mode reads
+    // `stackRef.outputs` directly and never touches the output key.
     this.outputKey = this.domainOptional
       ? (outputKey ?? '')
       : (outputKey ?? getDefaultOutputKey());
@@ -288,6 +306,11 @@ export class CloudInfraReference {
       return this.resolveDomainOptional(name);
     }
 
+    // Flat mode (Move 4): resolve against the self-describing record array.
+    if (this.flat) {
+      return this.resolveFlat(resourceType, name, domainOverride);
+    }
+
     const domain = domainOverride ?? this.domain.domain;
 
     return this.stackRef.getOutput(this.outputKey).apply((raw: unknown) => {
@@ -325,26 +348,132 @@ export class CloudInfraReference {
         }
       }
 
-      if (matches.length === 0) {
-        throw new Error(
-          `Resource '${name}' not found under domain '${domain}'.`
-        );
-      }
-
-      if (matches.length > 1) {
-        const candidateTypes = matches.map(m => m.type).join(', ');
-        // Echo a real candidate (the full Pulumi type resolves via the
-        // `resourceTypeMap[...] ?? resourceType` fall-through) so the hint is
-        // copy-pasteable rather than a `<type>` placeholder.
-        throw new Error(
+      // Echo a real candidate type (the full Pulumi type resolves via the
+      // `resourceTypeMap[...] ?? resourceType` fall-through) so the hint is
+      // copy-pasteable rather than a `<type>` placeholder.
+      return CloudInfraReference.selectUniqueMatch(matches, {
+        name,
+        notFound: `Resource '${name}' not found under domain '${domain}'.`,
+        ambiguous: candidates =>
           `Resource '${name}' is ambiguous under domain '${domain}': it ` +
-            `exists under multiple types [${candidateTypes}]. Disambiguate ` +
-            `with a type, e.g. get('${name}', { type: '${matches[0].type}' }).`
+          `exists under multiple types [${candidates}]. Disambiguate ` +
+          `with a type, e.g. get('${name}', { type: '${matches[0].type}' }).`,
+        candidate: m => m.type,
+      });
+    });
+  }
+
+  /**
+   * Selects the single match from a cross-scan, or throws the not-found /
+   * ambiguity error. Shared by the nested cross-type scan ({@link resolve}) and
+   * the flat cross-record scan ({@link resolveFlat}) so the three-outcome
+   * contract (zero → not-found, one → return, many → ambiguity) cannot drift
+   * between the two wires. Each caller supplies its own (byte-stable) message
+   * strings and candidate formatter.
+   * @private
+   */
+  private static selectUniqueMatch<
+    M extends { resource: ResourceOutput },
+  >(
+    matches: M[],
+    messages: {
+      name: string;
+      notFound: string;
+      ambiguous: (candidates: string) => string;
+      candidate: (m: M) => string;
+    }
+  ): ResourceOutput {
+    if (matches.length === 0) {
+      throw new Error(messages.notFound);
+    }
+    if (matches.length > 1) {
+      const candidates = matches.map(messages.candidate).join(', ');
+      throw new Error(messages.ambiguous(candidates));
+    }
+    return matches[0].resource;
+  }
+
+  /**
+   * Resolves a resource in FLAT mode (Move 4) by scanning the self-describing
+   * `FlatOutputRecord[]` array emitted by `CloudInfraOutput.getFlatOutputs()`.
+   *
+   * Matching mirrors the nested cross-type-scan semantics (DX3): records are
+   * filtered by `key === name`, then optionally narrowed by `type` (resolved
+   * through the same `resourceTypeMap` alias table) and by `domain` (the
+   * configured domain or a per-lookup override; an empty configured domain
+   * means "any domain"). Exactly one survivor is returned; multiple survivors
+   * throw an ambiguity error listing the candidate `{type, domain}` pairs and
+   * suggesting a disambiguator; zero survivors throw not-found.
+   * @private
+   */
+  private resolveFlat(
+    type: string | undefined,
+    name: string,
+    domainOverride?: string
+  ): pulumi.Output<ResourceOutput> {
+    const domainFilter = domainOverride ?? this.domain.domain;
+    const normalizedType =
+      type !== undefined
+        ? (resourceTypeMap[type.toLowerCase()] ?? type)
+        : undefined;
+
+    return this.stackRef.getOutput(this.outputKey).apply((raw: unknown) => {
+      if (!Array.isArray(raw)) {
+        throw new Error(
+          `Invalid flat stack output structure: expected an array, got ${typeof raw}. ` +
+            `Did the source stack export 'CloudInfraOutput.getFlatOutputs()'?`
         );
       }
 
-      return matches[0].resource;
+      const records = raw as FlatStackOutput[];
+      const matches = records.filter(r => {
+        if (!r || typeof r !== 'object') return false;
+        if (r.key !== name) return false;
+        if (normalizedType !== undefined && r.type !== normalizedType) {
+          return false;
+        }
+        // Empty configured domain (and no override) => do not scope by domain.
+        if (domainFilter !== '' && r.domain !== domainFilter) {
+          return false;
+        }
+        return true;
+      });
+
+      const domainHint =
+        domainFilter !== '' ? ` under domain '${domainFilter}'` : '';
+
+      const match = CloudInfraReference.selectUniqueMatch(
+        matches.map(r => ({ record: r, resource: r as ResourceOutput })),
+        {
+          name,
+          notFound: `Resource '${name}' not found in flat outputs${domainHint}.`,
+          ambiguous: candidates =>
+            `Resource '${name}' is ambiguous${domainHint} in flat outputs: it ` +
+            `matches multiple records [${candidates}]. Disambiguate with a ` +
+            `type, e.g. get('${name}', { type: '${matches[0].type}' }).`,
+          candidate: m => `{ type: '${m.record.type}', domain: '${m.record.domain}' }`,
+        }
+      );
+
+      // Strip the inline addressing (`key`/`type`/`domain`) so the flat `.raw`
+      // surfaces the SAME `ResourceOutput` shape as the nested reader (cross-mode
+      // `raw` parity — the nested wire never carries addressing in the record).
+      return CloudInfraReference.stripFlatAddressing(match as FlatStackOutput);
     });
+  }
+
+  /**
+   * Projects a {@link FlatStackOutput} to a clean {@link ResourceOutput} by
+   * dropping the inline addressing fields (`key`/`type`/`domain`). Keeps the
+   * flat reader's resolved record byte-shape-identical to the nested reader's.
+   * @private
+   */
+  private static stripFlatAddressing(record: FlatStackOutput): ResourceOutput {
+    const { key: _key, type: _type, domain: _domain, ...rest } = record;
+    void _key;
+    void _type;
+    void _domain;
+    return rest;
   }
 
   /**
@@ -447,11 +576,20 @@ export class CloudInfraReference {
     const stackParts = this.stack.split('/'); // org/project/env
     const proj = stackParts[1] ?? 'unkproj';
     const env = stackParts[2] ?? 'unkenv';
-    if (this.domainOptional) {
+    const { domain } = this.domain;
+    // F4: emit the domain-suffixed form only when a domain segment is actually
+    // present. Two domain-less cases collapse to the ReferenceWithoutDomain
+    // form (`${proj}-${name}-${env}`):
+    //   - domain-optional mode (never has a domain), and
+    //   - flat mode constructed WITHOUT a domain (else a dangling trailing `-`).
+    // The empty-string check is SCOPED to flat mode so the legacy NESTED path
+    // is byte-unchanged: a nested reference built with an explicit `domain: ''`
+    // keeps its historical `${proj}-${name}-${env}-` output (F4 frozen). Nested
+    // references in practice always carry a non-empty domain.
+    if (this.domainOptional || (this.flat && domain === '')) {
       // Byte-identical to the former ReferenceWithoutDomain.getIdentifier (F4).
       return `${proj}-${name}-${env}`;
     }
-    const { domain } = this.domain;
     return `${proj}-${name}-${env}-${domain}`;
   }
 
@@ -592,6 +730,25 @@ export class CloudInfraReference {
             record: CloudInfraReference.convertStringToResourceOutput(
               value as string
             ),
+          }));
+      });
+    }
+
+    // Flat mode (Move 4): map each self-describing record straight through,
+    // surfacing its inline `domain`/`type`/`key` addressing.
+    if (this.flat) {
+      return this.stackRef.getOutput(this.outputKey).apply((raw: unknown) => {
+        if (!Array.isArray(raw)) {
+          return [];
+        }
+        return (raw as FlatStackOutput[])
+          .filter(r => r && typeof r === 'object')
+          .map(r => ({
+            domain: r.domain,
+            type: r.type,
+            name: r.key,
+            // Strip addressing so `record` matches the nested `all()` shape.
+            record: CloudInfraReference.stripFlatAddressing(r),
           }));
       });
     }

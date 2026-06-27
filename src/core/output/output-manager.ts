@@ -96,6 +96,60 @@ export interface OutputResourceEntry {
 export type OutputResource = pulumi.CustomResource & OutputResourceEntry;
 
 /**
+ * A flat, self-describing output record (Move 4 — flat outputs).
+ *
+ * This is the NEW, additive emission shape produced alongside the legacy nested
+ * `data[domain][resourceType][groupingKey]` map. Each call to
+ * {@link CloudInfraOutput.record} appends exactly one of these records to a
+ * parallel flat collection, retrievable via
+ * {@link CloudInfraOutput.getFlatOutputs}.
+ *
+ * Unlike the nested map — where the domain / resource-type / grouping-key live
+ * in the object PATH — a flat record carries that addressing information INLINE
+ * (`key`, `type`, `domain`) so a single array element fully describes itself.
+ * This makes it trivial to consume downstream (filter / map over a flat list)
+ * without walking three levels of nesting.
+ *
+ * The resource fields (`id`, `name`, `email`, …) use the SAME allow-list as the
+ * nested {@link OutputResourceEntry} (see `buildResourceEntry`): `id` is always
+ * present, `name` and the optional fields are included only when defined on the
+ * source resource. Because outputs are stack metadata and NOT Pulumi resources,
+ * this additive emission carries zero state risk on the producer.
+ *
+ * @example A flat record for a service account recorded as `("gcp:serviceaccount:Account", "my-app", meta, sa)`:
+ * ```ts
+ * {
+ *   key: "my-app",
+ *   type: "gcp:serviceaccount:Account",
+ *   domain: "au",
+ *   id: <Output<string>>,
+ *   name: <Output<string>>,
+ *   email: <Output<string>>,
+ *   member: <Output<string>>,
+ * }
+ * ```
+ */
+export interface FlatOutputRecord extends OutputResourceEntry {
+  /**
+   * The grouping key the resource was recorded under (the nested map's
+   * third-level key). This is the primary lookup key for the flat reader.
+   */
+  key: string;
+
+  /**
+   * The resource type the resource was recorded under (the nested map's
+   * second-level key), e.g. `"gcp:serviceaccount:Account"`.
+   */
+  type: string;
+
+  /**
+   * The domain the resource was recorded under (the nested map's top-level
+   * key), e.g. `"au"`, derived from `meta.getDomain()`.
+   */
+  domain: string;
+}
+
+/**
  * Manages structured output recording for Pulumi resources.
  *
  * This class provides a standardized way to collect and export details about
@@ -135,6 +189,15 @@ export class CloudInfraOutput {
   > = {};
 
   /**
+   * The parallel FLAT emission (Move 4). Every {@link record} call appends one
+   * self-describing {@link FlatOutputRecord} here in addition to writing the
+   * nested {@link data} map. This is additive and never replaces the nested
+   * format. Insertion order mirrors the order of `record()` calls.
+   * @private
+   */
+  private readonly flat: FlatOutputRecord[] = [];
+
+  /**
    * Creates a new instance of the `CloudInfraOutput`.
    *
    * No parameters are required. All recorded resources are stored directly
@@ -169,6 +232,18 @@ export class CloudInfraOutput {
 
     const entry = this.buildResourceEntry(resource);
     this.data[domain][resourceType][groupingKey] = entry;
+
+    // DUAL-EMIT (Move 4): append a flat, self-describing copy of the same
+    // entry. Reuse the IDENTICAL `entry` field values (same allow-list) so the
+    // flat record never diverges from the nested one; only the addressing
+    // (key/type/domain, which the nested map encodes as the object path) is
+    // added inline.
+    this.flat.push({
+      key: groupingKey,
+      type: resourceType,
+      domain,
+      ...entry,
+    });
   }
 
   /**
@@ -184,6 +259,26 @@ export class CloudInfraOutput {
     // Return the recorded data directly. Call sites can choose any variable
     // name when exporting without affecting the structure.
     return this.data;
+  }
+
+  /**
+   * Retrieves all recorded outputs as a FLAT, self-describing array (Move 4).
+   *
+   * This is the NEW emission, produced alongside (not instead of)
+   * {@link getOutputs}. Each element is a {@link FlatOutputRecord} carrying its
+   * own `key` / `type` / `domain` addressing inline plus the same resource
+   * fields the nested entry has. A producer stack can export it alongside the
+   * existing nested export:
+   *
+   * ```ts
+   * export const v1 = mgr.getOutputs();        // legacy nested wire
+   * export const cloudInfra = mgr.getFlatOutputs(); // new flat wire
+   * ```
+   *
+   * @returns The flat list of records, in `record()` insertion order.
+   */
+  public getFlatOutputs(): FlatOutputRecord[] {
+    return this.flat;
   }
 
   /**
