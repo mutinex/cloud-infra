@@ -43,9 +43,20 @@
   children — mapping over singles restructures the URN tree → mass replace. Destructive, low value; left
   alone. Name-first parity (the actual DX win) is achieved without it.
 
-**→ The next real milestone is the SHIP decision (§7) — the user's call.** Everything remains
-PREVIEW-ONLY; nothing has been applied. If resuming with no new user direction: confirm whether to
-proceed to SHIP (§7), or stop here.
+✅ **Docs pass DONE & merged (@ `349ded8`); `v2` pushed to `origin/v2`.** All 23 READMEs updated +
+verified against source: name-first as the primary construction example (3 gaps filled —
+backendservice/instance/certificatemap), an Outputs section everywhere documenting the v2 flat wire
+(`getFlatOutputs()`), `core/output` rewritten around the flat wire, `core/reference` re-led with the
+`get(name,{type?,domain?})` API (legacy getters marked `@deprecated`). The pass also removed pre-existing
+**fabricated** docs (a non-existent `validation.ts` section + `ReferenceError` in `core/README`, and
+`getTagValue()` calls in the tag README). `docs/v2-MIGRATION.md` holds the v1→v2 consumer runbook.
+
+**→ Chosen rollout strategy (user, 2026-06-28):** keep `v2` as a long-lived BRANCH (do NOT merge to
+`main` yet); publish **preview/prerelease npm packages** off `v2` (a preview dist-tag that auto-updates
+consumers wired to it); then upgrade a **low-risk consumer first — the admin-app repo — as the canary**
+before the org/monorepo stacks. Still PREVIEW-ONLY until a human-gated `pulumi up` per stack. Next
+concrete step toward this: wire a preview-publish CI workflow off `v2` (the package builds CJS/ESM/DTS
+green; 450 tests). See `docs/v2-MIGRATION.md` §4–§5.
 
 The original collapse spec + traps are retained in §5 for audit; the work cycle / merge model below
 (§§1–3, 6) still governs any further structural change.
@@ -89,7 +100,7 @@ preview gate (needs creds agents lack) and does the merge.
 - **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
   AND committed on `v2`. Keep both updated.
 
-## 4. CURRENT STATE (v2 @ e73b21a, 450 green — all PREVIEW-ONLY, no apply ever run)
+## 4. CURRENT STATE (v2 @ 349ded8, pushed to origin/v2, 450 green — all PREVIEW-ONLY, no apply ever run)
 MERGED & validated:
 - **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
   (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases

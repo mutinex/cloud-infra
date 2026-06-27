@@ -59,7 +59,15 @@ version** — the gate result is only valid for the provider the apply actually 
 
 ## 4. Per-stack rollout
 
+**Chosen approach (2026-06-28):** `v2` stays a long-lived branch (NOT merged to `main` yet). Publish
+**preview/prerelease packages** off `v2` under a dedicated dist-tag (e.g. `next`/`preview`) so opted-in
+consumers auto-pick-up new builds. Migrate a **low-risk consumer first — the admin-app repo — as the
+canary**, gate it clean, then proceed to the org/monorepo stacks below. (TODO: a preview-publish CI
+workflow off `v2`; the package already builds CJS/ESM/DTS green with 450 tests.)
+
 Consumers (in suggested order — simplest/most-isolated first, each fully gated before the next):
+
+- **admin-app** — first canary (low risk).
 
 | Stack | Path | Pulumi stack |
 |---|---|---|
