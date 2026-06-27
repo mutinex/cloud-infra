@@ -480,7 +480,7 @@ When integrating with core systems, ensure:
 - [ ] **Configuration**: Use the exported config objects (`gcpConfig`, `accessMatrixConfig`, `resourceNamingConfig`) instead of hard-coded values
 - [ ] **Logging**: Replace `pulumi.log.*` with `CloudInfraLogger`
 - [ ] **Errors**: Use typed errors with component context
-- [ ] **Validation**: Use centralized validation functions
+- [ ] **Validation**: Validate inputs through the Zod meta schema (`CloudInfraMetaSchema`) rather than ad-hoc checks
 - [ ] **Utilities**: Import from `./core/helpers` instead of duplicating
 - [ ] **Testing**: Verify all builds pass after integration
 
@@ -528,11 +528,15 @@ try {
 
 ### 4. **Type Safety**
 
-Use validation functions for type safety:
+Validate inputs through the Zod meta schema, which throws a `ZodError`
+(surfaced as a `ValidationError`) on malformed input:
 
 ```typescript
-const name = validateSingleName(input.name, 'ComponentName');
-const required = validateRequiredString(input.field, 'field', 'ComponentName');
+import { CloudInfraMeta } from '@mutinex/cloud-infra';
+
+// Construction parses input against CloudInfraMetaSchema; invalid names,
+// locations, or over-length prefixes throw at construction time.
+const meta = new CloudInfraMeta({ name: 'api', domain: 'au' });
 ```
 
 ## 📖 Additional Resources
