@@ -6,3 +6,6 @@ dist
 .todo
 testinfra
 node_modules
+
+# tsc incremental build artifact
+*.tsbuildinfo
