@@ -15,6 +15,11 @@ import {
   apisNeedingIdentities,
 } from './common';
 import { ServiceUsageApiBootstrap } from './bootstrap';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the Service Project component. */
+export const CLOUD_INFRA_SERVICE_PROJECT_TYPE =
+  'cloud-infra:project:CloudInfraServiceProject';
 
 /**
  * CloudInfra Organization – Service Project
@@ -39,7 +44,7 @@ import { ServiceUsageApiBootstrap } from './bootstrap';
 /**
  * CloudInfra Service Project that connects to a shared VPC host project.
  */
-export class CloudInfraServiceProject {
+export class CloudInfraServiceProject extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly config: CloudInfraProjectConfig;
   private readonly project: gcp.organizations.Project;
@@ -58,17 +63,16 @@ export class CloudInfraServiceProject {
    * @param meta - Metadata for naming and configuration
    * @param config - Service project configuration including VPC host project
    */
-  constructor(meta: CloudInfraMeta, config: CloudInfraProjectConfig) {
-    CloudInfraLogger.info(
-      'Initializing GCP Service Project with Shared VPC attachment',
-      {
-        component: 'project-service',
-        operation: 'constructor',
-      }
-    );
-
-    this.meta = meta;
-    this.config = CloudInfraProjectCustomConfigSchema.parse(config);
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraProjectConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    // ── Pre-super computation ──────────────────────────────────────────────
+    // `super()` must be the first statement, so the name/validation logic that
+    // previously ran at the top of the body is hoisted here WITHOUT changing
+    // the computed values. These calls read from `meta` only (not `this`).
+    const parsedConfig = CloudInfraProjectCustomConfigSchema.parse(config);
 
     // Validate that the caller supplied a single `name` string rather than an
     // array (arrays are unsupported for project-level components).
@@ -81,9 +85,32 @@ export class CloudInfraServiceProject {
         'constructor'
       );
     }
-    this.inputName = candidateInputName;
 
-    this.componentName = meta.getName();
+    const componentName = meta.getName();
+
+    // Register the component node. Children parent under `this`; the Project
+    // (the only label-supporting child) inherits the label-stamping
+    // transformation via `childOpts()`. The generated NAME is unchanged (F1/F2).
+    super(
+      CLOUD_INFRA_SERVICE_PROJECT_TYPE,
+      componentName,
+      componentName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
+    CloudInfraLogger.info(
+      'Initializing GCP Service Project with Shared VPC attachment',
+      {
+        component: 'project-service',
+        operation: 'constructor',
+      }
+    );
+
+    this.meta = meta;
+    this.config = parsedConfig;
+    this.inputName = candidateInputName;
+    this.componentName = componentName;
 
     const projectArgs: gcp.organizations.ProjectArgs = {
       ...this.config,
@@ -95,12 +122,17 @@ export class CloudInfraServiceProject {
       projectArgs.orgId = this.config.orgId;
     }
 
+    // Project moves UNDER this component. v1 created it FLAT (no parent), so it
+    // is aliased back to its old root-level URN to migrate IN-PLACE. It is the
+    // ONLY child here that supports `labels` → use `childOpts()`. `protect` is
+    // preserved exactly.
     this.project = new gcp.organizations.Project(
       this.componentName,
       projectArgs,
-      {
+      this.childOpts({
         protect: this.config.deletionPolicy === 'PREVENT',
-      }
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
     );
 
     // Bootstrap and enable API services
@@ -123,6 +155,10 @@ export class CloudInfraServiceProject {
     if (this.config.vpcHostProject) {
       this.setupVpcAttachments(enabledServicesRes);
     }
+
+    this.registerOutputs({
+      project: this.project,
+    });
   }
 
   /**
