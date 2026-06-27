@@ -63,6 +63,22 @@ export interface StackOutputs {
 }
 
 /**
+ * Type representing one element of the NEW flat, self-describing output wire
+ * (`CloudInfraOutput.getFlatOutputs()`). On the read side every field is a
+ * plain (resolved) string, mirroring the producer's `FlatOutputRecord` minus
+ * the `pulumi.Output` wrappers. `key` / `type` / `domain` carry the addressing
+ * inline; the remaining fields are the same allow-list as {@link ResourceOutput}.
+ */
+export interface FlatStackOutput extends ResourceOutput {
+  /** The grouping key the resource was recorded under. */
+  key: string;
+  /** The resource type (e.g. `"gcp:serviceaccount:Account"`). */
+  type: string;
+  /** The domain (e.g. `"au"`). */
+  domain: string;
+}
+
+/**
  * Type representing a resource output with common properties
  */
 export interface ResourceOutput {
@@ -102,6 +118,20 @@ export interface ReferenceOptions {
    * @default "v1"
    */
   outputKey?: string;
+
+  /**
+   * When `true`, resolve against the NEW flat, self-describing emission
+   * (`CloudInfraOutput.getFlatOutputs()` → a `FlatOutputRecord[]`) instead of
+   * the legacy nested `root[domain][type][name]` wire. This is the Move 4 flat
+   * reader: records are matched by `key`, with optional `{ type, domain }`
+   * disambiguators (cross-record scan semantics mirror the nested cross-type
+   * scan). The `outputKey` still selects which stack output array to read.
+   *
+   * Mutually distinct from domain-optional mode (which reads flat `root[name]`
+   * STRINGS); flat mode reads an ARRAY of structured records.
+   * @default false
+   */
+  flat?: boolean;
 }
 
 /**

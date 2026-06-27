@@ -35,4 +35,5 @@ export type {
   ReferenceRecord,
   StackOutputs,
   ResourceOutput,
+  FlatStackOutput,
 } from './types';
