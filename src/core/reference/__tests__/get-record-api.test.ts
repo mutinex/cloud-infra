@@ -100,11 +100,30 @@ describe('get().field record API (nested/domain wire)', () => {
     expect(viaRecord).toBe(viaLegacy);
   });
 
-  it('default type is "account" (service account) when no type given', () => {
-    // "my-app" lives under gcp:serviceaccount:Account, resolvable without type.
-    expect(ref.get('my-app').email).toBe(
-      'my-app@proj.iam.gserviceaccount.com'
-    );
+  describe('cross-type scan (no { type } given)', () => {
+    it('resolves a name that exists under exactly one type', () => {
+      // "my-app" lives only under gcp:serviceaccount:Account; the scan finds
+      // exactly one match and returns it without needing a type.
+      expect(ref.get('my-app').email).toBe(
+        'my-app@proj.iam.gserviceaccount.com'
+      );
+      expect(ref.get('my-app').id).toBe('proj/sa/my-app');
+    });
+
+    it('throws asking for { type } when a name is shared by multiple types', () => {
+      // "collision" exists under BOTH gcp:serviceaccount:Account and
+      // gcp:storage:Bucket → the no-type scan must refuse to guess.
+      expect(() => ref.get('collision').id).toThrow(/is ambiguous/);
+      expect(() => ref.get('collision').id).toThrow(
+        /gcp:serviceaccount:Account/
+      );
+      expect(() => ref.get('collision').id).toThrow(/gcp:storage:Bucket/);
+      // The hint echoes a real candidate type (copy-pasteable), not a
+      // `<type>` placeholder.
+      expect(() => ref.get('collision').id).toThrow(
+        "get('collision', { type: 'gcp:serviceaccount:Account' })"
+      );
+    });
   });
 
   describe('collision disambiguation via { type }', () => {
@@ -146,10 +165,54 @@ describe('get().field record API (nested/domain wire)', () => {
     });
   });
 
-  describe('not-found error hints at { type }', () => {
-    it('suggests passing a type when a non-SA name is not found', () => {
-      expect(() => ref.get('archive').email).toThrow(
-        "get('archive', { type: 'bucket' })"
+  describe('not-found', () => {
+    it('throws a not-found error when the name exists under no type', () => {
+      expect(() => ref.get('does-not-exist').email).toThrow(
+        "Resource 'does-not-exist' not found under domain 'au'."
+      );
+    });
+
+    it('throws not-found with an explicit type that has no such name', () => {
+      expect(() => ref.get('my-app', { type: 'bucket' }).id).toThrow(
+        "Resource 'my-app' of type 'gcp:storage:Bucket' not found under domain 'au'."
+      );
+    });
+
+    it('scan against a missing domain falls to not-found (does not mask)', () => {
+      // WIRE only has an "au" domain; a reference scoped to "us" finds no type
+      // map and must throw not-found rather than silently resolving.
+      const usRef = new CloudInfraReference('mutiny-group/foundation/prd', {
+        domain: 'us',
+        outputKey: 'cloud-infra',
+      });
+      expect(() => usRef.get('my-app').email).toThrow(
+        "Resource 'my-app' not found under domain 'us'."
+      );
+    });
+
+    it('scan skips malformed (non-object) type entries', () => {
+      // A non-object value under a type must be skipped by the guard, not
+      // matched or throw. Here "lonely" exists only under the well-formed type.
+      mockStackRef.getOutput.mockImplementationOnce(() => {
+        const malformed = {
+          au: {
+            'gcp:bad:Type': 'oops-not-an-object',
+            'gcp:serviceaccount:Account': {
+              lonely: { email: 'lonely@proj.iam.gserviceaccount.com' },
+            },
+          },
+        };
+        return {
+          apply: (fn: (raw: unknown) => unknown) => {
+            const resolved = fn(malformed);
+            return Array.isArray(resolved)
+              ? resolved
+              : { apply: (cb: (r: unknown) => unknown) => cb(resolved) };
+          },
+        };
+      });
+      expect(ref.get('lonely').email).toBe(
+        'lonely@proj.iam.gserviceaccount.com'
       );
     });
   });

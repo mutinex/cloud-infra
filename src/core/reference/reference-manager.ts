@@ -21,15 +21,6 @@ import type {
 type RecordField = 'id' | 'name' | 'email' | 'member' | 'projectId' | 'version';
 
 /**
- * The resource type assumed by `get(name)` when no `{ type }` is supplied.
- * Matches the service-account aliases in `config.ts` and the access-matrix
- * `resourceType || 'account'` default, so the no-type path resolves service
- * accounts (the most common cross-stack reference).
- * @internal
- */
-const DEFAULT_RESOURCE_TYPE = 'account';
-
-/**
  * Manages references to resources from other Pulumi stacks, providing a simplified
  * and consistent interface for consuming their outputs.
  *
@@ -268,7 +259,9 @@ export class CloudInfraReference {
    * aliases (e.g., "sa" -> "gcp:serviceaccount:Account") to simplify lookups.
    *
    * @param resourceType - The type of the resource to resolve. Can be a short
-   *   alias (e.g., "bucket") or the full Pulumi type name.
+   *   alias (e.g., "bucket") or the full Pulumi type name. When `undefined`,
+   *   the name is resolved by a CROSS-TYPE SCAN across every type under the
+   *   resolved domain (throws on a multi-type collision).
    * @param name - The grouping key under which the resource was recorded in the
    *   source stack.
    * @returns A `pulumi.Output` that resolves to the raw resource object.
@@ -276,14 +269,14 @@ export class CloudInfraReference {
    * @private
    */
   private resolve(
-    resourceType: string,
+    resourceType: string | undefined,
     name: string,
     domainOverride?: string
   ): pulumi.Output<ResourceOutput> {
     // Domain-optional mode is an INSTANCE INVARIANT fixed at construction: it
     // reads a fundamentally different (flat) wire, so a per-call `domain`/`type`
     // can never flip the resolution strategy. Reject a domain override rather
-    // than silently switching wire formats.
+    // than silently switching wire formats. There is no type dimension here.
     if (this.domainOptional) {
       if (domainOverride !== undefined) {
         throw new Error(
@@ -296,8 +289,6 @@ export class CloudInfraReference {
     }
 
     const domain = domainOverride ?? this.domain.domain;
-    const normalizedType = resourceType.toLowerCase();
-    const fullType = resourceTypeMap[normalizedType] ?? resourceType;
 
     return this.stackRef.getOutput(this.outputKey).apply((raw: unknown) => {
       // Type guard to ensure we have the expected structure
@@ -308,20 +299,51 @@ export class CloudInfraReference {
       }
 
       const root = raw as StackOutputs;
-      const resource = root?.[domain]?.[fullType]?.[name];
+      const typesUnderDomain = root?.[domain] ?? {};
 
-      if (resource === undefined) {
-        // `fullType` defaults to the service-account type when no `type` was
-        // given; hint that a `{ type }` disambiguator may be required so the
-        // generic no-type path does not look broken for non-SA resources.
+      // Explicit type: look up exactly that type (existing behaviour).
+      if (resourceType !== undefined) {
+        const normalizedType = resourceType.toLowerCase();
+        const fullType = resourceTypeMap[normalizedType] ?? resourceType;
+        const resource = typesUnderDomain?.[fullType]?.[name];
+
+        if (resource === undefined) {
+          throw new Error(
+            `Resource '${name}' of type '${fullType}' not found under domain '${domain}'.`
+          );
+        }
+        return resource;
+      }
+
+      // No type given: scan every type under the domain for the name.
+      const matches: Array<{ type: string; resource: ResourceOutput }> = [];
+      for (const [type, names] of Object.entries(typesUnderDomain)) {
+        if (!names || typeof names !== 'object') continue;
+        const resource = (names as Record<string, ResourceOutput>)[name];
+        if (resource !== undefined) {
+          matches.push({ type, resource });
+        }
+      }
+
+      if (matches.length === 0) {
         throw new Error(
-          `Resource '${name}' of type '${fullType}' not found under domain ` +
-            `'${domain}'. If '${name}' is not a service account, pass its type, ` +
-            `e.g. get('${name}', { type: 'bucket' }).`
+          `Resource '${name}' not found under domain '${domain}'.`
         );
       }
 
-      return resource;
+      if (matches.length > 1) {
+        const candidateTypes = matches.map(m => m.type).join(', ');
+        // Echo a real candidate (the full Pulumi type resolves via the
+        // `resourceTypeMap[...] ?? resourceType` fall-through) so the hint is
+        // copy-pasteable rather than a `<type>` placeholder.
+        throw new Error(
+          `Resource '${name}' is ambiguous under domain '${domain}': it ` +
+            `exists under multiple types [${candidateTypes}]. Disambiguate ` +
+            `with a type, e.g. get('${name}', { type: '${matches[0].type}' }).`
+        );
+      }
+
+      return matches[0].resource;
     });
   }
 
@@ -443,19 +465,19 @@ export class CloudInfraReference {
    * sa.email; sa.id; sa.name; sa.member; sa.identifier;
    * ```
    *
-   * `type` / `domain` are optional disambiguators — supply `type` when a name
-   * exists under more than one resource type, and `domain` to override the
+   * `type` / `domain` are optional disambiguators — supply `type` only when a
+   * name exists under more than one resource type, and `domain` to override the
    * reference's configured domain for a single lookup. Each output field throws
    * a helpful error at apply time if the property is absent (preserving the
    * legacy `validateResourceProperty` behaviour). `identifier` is a
    * deterministic string (Frozen Contract F4).
    *
-   * NOTE: when `type` is omitted, the lookup defaults to the service-account
-   * type (`account`). A non-service-account resource therefore REQUIRES
-   * `{ type }` — e.g. `get("archive", { type: "bucket" })`. On a
-   * domain-optional reference (constructed without a `domain`), `type` and
-   * `domain` are meaningless (outputs are flat strings) and passing `domain`
-   * throws.
+   * Resolution: when `type` is omitted, the name is resolved by a CROSS-TYPE
+   * SCAN across every resource type under the resolved domain — exactly one
+   * match returns it; a name shared by multiple types throws, listing the
+   * candidate types and asking for `{ type }`; no match throws not-found. On a
+   * domain-optional reference (constructed without a `domain`), there is no
+   * type dimension: `root[name]` is read directly, and passing `domain` throws.
    *
    * @param name - The grouping key under which the resource was recorded.
    * @param options - Optional `{ type?, domain? }` disambiguators.
@@ -481,9 +503,10 @@ export class CloudInfraReference {
       return this.resolve(nameOrType, optionsOrName);
     }
 
-    // New record form: `get(name, { type?, domain? })`.
+    // New record form: `get(name, { type?, domain? })`. An omitted `type`
+    // triggers a cross-type scan in `resolve`.
     const name = nameOrType;
-    const type = optionsOrName?.type ?? DEFAULT_RESOURCE_TYPE;
+    const type = optionsOrName?.type;
     const domainOverride = optionsOrName?.domain;
     return this.buildRecord(name, type, domainOverride);
   }
@@ -495,7 +518,7 @@ export class CloudInfraReference {
    */
   private buildRecord(
     name: string,
-    type: string,
+    type: string | undefined,
     domainOverride?: string
   ): ReferenceRecord {
     // Capture a single resolver closure so `this` is not needed inside the
