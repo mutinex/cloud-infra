@@ -5,6 +5,7 @@ import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
 import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
+import { CloudInfraComponent } from '../../core/component';
 
 /**
  * Configuration for CloudRun job component.
@@ -17,6 +18,9 @@ export type CloudInfraCloudRunJobConfig = Omit<
   location?: pulumi.Input<string>;
   project?: pulumi.Input<string>;
 };
+
+/** Pulumi type token for the Cloud Run job component. */
+export const CLOUD_RUN_JOB_TYPE = 'cloud-infra:cloudrunjob:CloudRunJob';
 
 /**
  * **Cloud Run Job** component.
@@ -42,18 +46,34 @@ export type CloudInfraCloudRunJobConfig = Omit<
  * });
  * ```
  */
-export class CloudInfraCloudRunJob {
+export class CloudInfraCloudRunJob extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   public readonly job: gcp.cloudrunv2.Job;
 
-  constructor(meta: CloudInfraMeta, config: CloudInfraCloudRunJobConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    config: CloudInfraCloudRunJobConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const resourceName = meta.getName();
+
+    // Register the component node. The Job child parents under `this` and
+    // inherits the label-stamping transformation. The generated NAME is
+    // unchanged (F1).
+    super(
+      CLOUD_RUN_JOB_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing Cloud Run job component', {
       component: 'cloudrunjob',
       operation: 'constructor',
     });
 
     this.meta = meta;
-    const resourceName = meta.getName();
 
     // Build job args - location defaults to region from meta if not provided
     const jobArgs: gcp.cloudrunv2.JobArgs = {
@@ -63,7 +83,21 @@ export class CloudInfraCloudRunJob {
       location: config.location ?? deriveRegion(meta),
     };
 
-    this.job = new gcp.cloudrunv2.Job(resourceName, jobArgs);
+    // v1 created the Job FLAT (no parent, at the stack root). It now moves
+    // UNDER this component; alias it back to its old root-level URN so it
+    // updates in place rather than being replaced. gcp.cloudrunv2.Job supports
+    // `labels`, so use childOpts() (label stamping applies).
+    this.job = new gcp.cloudrunv2.Job(
+      resourceName,
+      jobArgs,
+      this.childOpts({
+        aliases: [{ parent: pulumi.rootStackResource }],
+      })
+    );
+
+    this.registerOutputs({
+      job: this.job,
+    });
   }
 
   /** Returns the underlying Pulumi `gcp.cloudrunv2.Job` resource. */

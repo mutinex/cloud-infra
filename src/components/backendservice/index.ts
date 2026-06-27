@@ -19,6 +19,11 @@ import { CloudInfraOutput } from '../../core/output';
 import { withDefaults, deriveRegion, omit } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the backend-service component. */
+export const BACKEND_SERVICE_TYPE =
+  'cloud-infra:backendservice:BackendService';
 
 const HealthCheckSchema = z
   .object({
@@ -90,7 +95,7 @@ export type CloudInfraBackendServiceConfig =
  * });
  * ```
  */
-export class CloudInfraBackendService {
+export class CloudInfraBackendService extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly backendService:
     | gcp.compute.BackendService
@@ -102,8 +107,21 @@ export class CloudInfraBackendService {
 
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraBackendServiceConfig = {}
+    cloudInfraConfig: CloudInfraBackendServiceConfig = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceName = meta.getName();
+
+    // Register the component node. Children (backend service + optional health
+    // check) parent under `this`. The generated NAME below is unchanged (F1).
+    super(
+      BACKEND_SERVICE_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing backend service component', {
       component: 'backend-service',
       operation: 'constructor',
@@ -122,8 +140,6 @@ export class CloudInfraBackendService {
       cloudInfraConfig as Record<string, unknown>,
       ['healthCheck'] as const
     );
-
-    const resourceName = meta.getName();
 
     // Ensure single-name usage; suggest bulk variant otherwise
     const candidateInputName = meta.getInputName();
@@ -161,7 +177,15 @@ export class CloudInfraBackendService {
         rest as Partial<gcp.compute.HealthCheckArgs>
       );
 
-      createdHealthCheck = new gcp.compute.HealthCheck(resourceName, hcArgs);
+      // v1 created the HealthCheck FLAT (no parent, at the stack root). It now
+      // moves UNDER this component; alias it back to its old root-level URN so
+      // it updates in place rather than being replaced. gcp.compute.HealthCheck
+      // has NO `labels` field, so use plain `{ parent: this }` (NOT childOpts) —
+      // injecting labels onto it would hard-error.
+      createdHealthCheck = new gcp.compute.HealthCheck(resourceName, hcArgs, {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      });
 
       const bsConfigTyped = bsRawConfig as Record<string, unknown>;
       if (!bsConfigTyped.healthChecks) {
@@ -180,9 +204,17 @@ export class CloudInfraBackendService {
         bsRawConfig as Partial<gcp.compute.BackendServiceArgs>
       );
 
+      // v1 created the BackendService FLAT (no parent). The HealthCheck is a
+      // SIBLING (referenced via `healthChecks: [hc.id]`, not a Pulumi parent),
+      // so this child aliases back to root. gcp.compute.BackendService has NO
+      // `labels` field, so use plain `{ parent: this }` (NOT childOpts).
       this.backendService = new gcp.compute.BackendService(
         resourceName,
-        bsArgs
+        bsArgs,
+        {
+          parent: this,
+          aliases: [{ parent: pulumi.rootStackResource }],
+        }
       );
     } else {
       const bsArgs = withDefaults<gcp.compute.RegionBackendServiceArgs>(
@@ -195,13 +227,26 @@ export class CloudInfraBackendService {
         bsRawConfig as Partial<gcp.compute.RegionBackendServiceArgs>
       );
 
+      // Same as the global branch: regional backend service moves under this
+      // component, aliased back to its old root URN. gcp.compute.
+      // RegionBackendService has NO `labels` field, so use plain
+      // `{ parent: this }` (NOT childOpts).
       this.backendService = new gcp.compute.RegionBackendService(
         resourceName,
-        bsArgs
+        bsArgs,
+        {
+          parent: this,
+          aliases: [{ parent: pulumi.rootStackResource }],
+        }
       );
     }
 
     this.healthCheck = createdHealthCheck;
+
+    this.registerOutputs({
+      backendService: this.backendService,
+      healthCheck: this.healthCheck,
+    });
   }
 
   /** Returns the underlying GCP Backend-Service resource. */
