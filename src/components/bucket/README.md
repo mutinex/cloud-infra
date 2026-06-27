@@ -14,13 +14,12 @@
 
 ```ts
 import {
-  CloudInfraMeta,
   CloudInfraBucket,
   CloudInfraBulkBucket,
 } from '@mutinex/cloud-infra';
 ```
 
-- Constructors – `new CloudInfraBucket(name, args?)`, `new CloudInfraBulkBucket(meta, config?)`
+- Constructors – `new CloudInfraBucket(name, args?)`, `new CloudInfraBulkBucket(names, args?)`
 - Helpful getters – `.getName()`, `.getUrl()`
 - Stack outputs – `.exportOutputs(outputManager)`
 
@@ -48,13 +47,9 @@ const bucket = new CloudInfraBucket('logs', {
 ### 3. Bulk buckets with per-bucket overrides
 
 ```ts
-const meta = new CloudInfraMeta({
-  name: ['bulk1', 'bulk2'],
+const buckets = new CloudInfraBulkBucket(['bulk1', 'bulk2'], {
   domain: 'us',
   location: ['us-central1', 'us-east1'],
-});
-
-const buckets = new CloudInfraBulkBucket(meta, {
   forceDestroy: true, // applies to all buckets
   custom: {
     bulk1: { storageClass: 'NEARLINE' },
@@ -125,10 +120,10 @@ export const org = out.getOutputs(); //             legacy nested wire
 for the full wire format and for consuming these outputs cross-stack via
 `ref.get(...)`.
 
-> **Meta-first (deprecated):** `new CloudInfraBucket(meta, config)` is retained
-> for backward compatibility and produces **identical** resources; the
-> name-first form shown above is preferred. `CloudInfraBulkBucket` remains
-> meta-first (it takes a `CloudInfraMeta` carrying the `name` array).
+> **Meta-first (deprecated):** `new CloudInfraBucket(meta, config)` /
+> `new CloudInfraBulkBucket(meta, config)` are retained for backward
+> compatibility and produce **identical** resources; the name-first forms shown
+> above (`CloudInfraBulkBucket` takes a `string[]` of names) are preferred.
 
 ---
 
