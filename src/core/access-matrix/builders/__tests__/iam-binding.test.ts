@@ -7,6 +7,7 @@ import {
   IamBindingParams,
   ResourceNotSupportedError,
 } from '../../types/common-types';
+import { SUPPORTED_RESOURCE_TYPES } from '../../resources/resource-types';
 
 // ---------------------------------------------------------------------------
 // Pulumi mock
@@ -122,6 +123,11 @@ function tokenOf(resource: unknown): string {
   return (resource as { __token: string }).__token;
 }
 
+/** Read the args object passed to the mocked `gcp.*IAMMember` constructor. */
+function argsOf(resource: unknown): Record<string, unknown> {
+  return (resource as { args: Record<string, unknown> }).args;
+}
+
 describe('createIamBinding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -138,6 +144,11 @@ describe('createIamBinding', () => {
       );
       expect(tokenOf(res)).toBe('gcp:projects/iAMMember:IAMMember');
       expect(gcp.projects.IAMMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        project: 'my-project',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Folder -> folder.IAMMember', () => {
@@ -147,6 +158,11 @@ describe('createIamBinding', () => {
       );
       expect(tokenOf(res)).toBe('gcp:folder/iAMMember:IAMMember');
       expect(gcp.folder.IAMMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        folder: 'folders/123',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Service Account -> serviceaccount.IAMMember', () => {
@@ -156,6 +172,11 @@ describe('createIamBinding', () => {
       );
       expect(tokenOf(res)).toBe('gcp:serviceaccount/iAMMember:IAMMember');
       expect(gcp.serviceaccount.IAMMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        serviceAccountId: 'projects/p/serviceAccounts/sa@p.iam',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Bucket -> storage.BucketIAMMember', () => {
@@ -165,48 +186,81 @@ describe('createIamBinding', () => {
       );
       expect(tokenOf(res)).toBe('gcp:storage/bucketIAMMember:BucketIAMMember');
       expect(gcp.storage.BucketIAMMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        bucket: 'my-bucket',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Cloud Run Job -> cloudrunv2.JobIamMember', () => {
       const res = createIamBinding(
         'gcp:cloudrunv2/job:Job',
-        params({ name: 'my-job', location: 'us-central1' })
+        params({ name: 'my-job', location: 'us-central1', project: 'p' })
       );
       expect(tokenOf(res)).toBe('gcp:cloudrunv2/jobIamMember:JobIamMember');
       expect(gcp.cloudrunv2.JobIamMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        name: 'my-job',
+        location: 'us-central1',
+        project: 'p',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Cloud Run Service -> cloudrunv2.ServiceIamMember', () => {
       const res = createIamBinding(
         'gcp:cloudrunv2/service:Service',
-        params({ name: 'my-svc', location: 'us-central1' })
+        params({ name: 'my-svc', location: 'us-central1', project: 'p' })
       );
       expect(tokenOf(res)).toBe(
         'gcp:cloudrunv2/serviceIamMember:ServiceIamMember'
       );
       expect(gcp.cloudrunv2.ServiceIamMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        name: 'my-svc',
+        location: 'us-central1',
+        project: 'p',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Subnetwork -> compute.SubnetworkIAMMember', () => {
       const res = createIamBinding(
         'gcp:compute/subnetwork:Subnetwork',
-        params({ name: 'my-subnet', region: 'us-central1' })
+        params({ name: 'my-subnet', region: 'us-central1', project: 'p' })
       );
       expect(tokenOf(res)).toBe(
         'gcp:compute/subnetworkIAMMember:SubnetworkIAMMember'
       );
       expect(gcp.compute.SubnetworkIAMMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        subnetwork: 'my-subnet',
+        region: 'us-central1',
+        project: 'p',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Compute Instance -> compute.InstanceIAMMember', () => {
       const res = createIamBinding(
         'gcp:compute/instance:Instance',
-        params({ name: 'my-instance', zone: 'us-central1-a' })
+        params({ name: 'my-instance', zone: 'us-central1-a', project: 'p' })
       );
       expect(tokenOf(res)).toBe(
         'gcp:compute/instanceIAMMember:InstanceIAMMember'
       );
       expect(gcp.compute.InstanceIAMMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        instanceName: 'my-instance',
+        zone: 'us-central1-a',
+        project: 'p',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Secret (global) -> secretmanager.SecretIamMember', () => {
@@ -219,6 +273,11 @@ describe('createIamBinding', () => {
       );
       expect(gcp.secretmanager.SecretIamMember).toHaveBeenCalledTimes(1);
       expect(gcp.secretmanager.RegionalSecretIamMember).not.toHaveBeenCalled();
+      expect(argsOf(res)).toMatchObject({
+        secretId: 'my-secret',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Regional Secret -> secretmanager.RegionalSecretIamMember', () => {
@@ -228,6 +287,7 @@ describe('createIamBinding', () => {
           id: 'my-secret',
           secretId: 'my-secret',
           location: 'us-central1',
+          project: 'p',
           __pulumiType: 'gcp:secretmanager/regionalSecret:RegionalSecret',
         })
       );
@@ -238,17 +298,31 @@ describe('createIamBinding', () => {
         1
       );
       expect(gcp.secretmanager.SecretIamMember).not.toHaveBeenCalled();
+      expect(argsOf(res)).toMatchObject({
+        secretId: 'my-secret',
+        location: 'us-central1',
+        project: 'p',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
 
     test('Repository -> artifactregistry.RepositoryIamMember', () => {
       const res = createIamBinding(
         'gcp:artifactregistry/repository:Repository',
-        params({ repositoryId: 'my-repo', location: 'us-central1' })
+        params({ repositoryId: 'my-repo', location: 'us-central1', project: 'p' })
       );
       expect(tokenOf(res)).toBe(
         'gcp:artifactregistry/repositoryIamMember:RepositoryIamMember'
       );
       expect(gcp.artifactregistry.RepositoryIamMember).toHaveBeenCalledTimes(1);
+      expect(argsOf(res)).toMatchObject({
+        repository: 'my-repo',
+        location: 'us-central1',
+        project: 'p',
+        role: ROLE,
+        member: MEMBER,
+      });
     });
   });
 
@@ -344,6 +418,23 @@ describe('createIamBinding', () => {
       ]) {
         expect(message).toContain(token);
       }
+    });
+
+    test('the "Available types" list matches SUPPORTED_RESOURCE_TYPES exactly (drift guard)', () => {
+      let message = '';
+      try {
+        createIamBinding('unsupported:resource:Type', params({ name: 'x' }));
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      // Guards against the dispatch table (IAM_BINDING_BUILDERS) and the
+      // standalone SUPPORTED_RESOURCE_TYPES export drifting apart in content
+      // or order.
+      expect(message).toBe(
+        `Resource type 'unsupported:resource:Type' is not supported. Available types: ${SUPPORTED_RESOURCE_TYPES.join(
+          ', '
+        )}`
+      );
     });
   });
 

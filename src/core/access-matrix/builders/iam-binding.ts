@@ -806,7 +806,10 @@ function buildRepositoryIamBinding(
  * so the supported-type list can never drift from the dispatch behaviour.
  *
  * Insertion order is preserved by `Object.keys`, so the error message lists the
- * types in the same order the former `SUPPORTED_RESOURCE_TYPES` array did.
+ * types in the same order the former local supported-types array did. (This
+ * also matches the standalone `SUPPORTED_RESOURCE_TYPES` export in
+ * `../resources/resource-types`; the two lists are kept in sync by a drift
+ * guard in the unit tests.)
  */
 const IAM_BINDING_BUILDERS: Record<
   string,
