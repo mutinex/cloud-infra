@@ -18,12 +18,15 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+// Import the GRAMMAR from its neutral home (not via reference/config) so this
+// producer-side test does not reach into the consumer layer. `resourceTypeMap`
+// is a genuine consumer-layer symbol and stays sourced from reference/config.
 import {
   serviceAliasMap,
-  resourceTypeMap,
   getServiceAlias,
   deriveServiceAliasFallback,
-} from '../../reference/config';
+} from '../../flat-key-grammar';
+import { resourceTypeMap } from '../../reference/config';
 
 // Repo root, derived from this test file's location
 // (src/core/output/__tests__/ -> up 4).
@@ -59,7 +62,11 @@ function listSourceFiles(dir: string): string[] {
  */
 function deriveEmittedTypeTokens(): string[] {
   const tokens = new Set<string>();
-  const literalRe = /'(gcp:[A-Za-z0-9]+:[A-Za-z0-9]+)'/g;
+  // Match a `gcp:<module>:<Type>` string literal. The middle/last segments use a
+  // permissive `[^':]+` charset (not just alnum) so module-path spellings such
+  // as `gcp:compute/v1:X` cannot silently slip past the scan and re-open the
+  // silent-fallback path this guard closes.
+  const literalRe = /'(gcp:[^':]+:[^':]+)'/g;
   for (const dir of EMITTER_DIRS) {
     for (const file of listSourceFiles(dir)) {
       const src = fs.readFileSync(file, 'utf8');

@@ -222,6 +222,24 @@ describe('CloudInfraOutput.getFlatOutputs() — flat keyed map', () => {
     ).toThrow(/Flat-output prefix collision: the prefix 'au\.widget\.shared'/);
   });
 
+  it('ALLOWS the SAME resource (same resourceType+groupingKey) to write disjoint fields under one prefix', () => {
+    // The prefix-ownership guard must not OVER-fire: the same recorded resource
+    // legitimately owning a prefix can contribute more keys. Two records with an
+    // identical (resourceType, groupingKey) but DISJOINT fields compose the same
+    // prefix `au.sa.app` — the owner matches, so neither the prefix guard nor the
+    // per-key guard fires, and both fields' keys coexist.
+    const mgr = new CloudInfraOutput();
+    const first = { id: out('sa-id') } as unknown as OutputResource;
+    const second = { email: out('sa@example.com') } as unknown as OutputResource;
+    mgr.record('gcp:serviceaccount:Account', 'app', metaFor('au'), first);
+    expect(() =>
+      mgr.record('gcp:serviceaccount:Account', 'app', metaFor('au'), second)
+    ).not.toThrow();
+    expect(Object.keys(mgr.getFlatOutputs()).sort()).toEqual(
+      ['au.sa.app.id', 'au.sa.app.email'].sort()
+    );
+  });
+
   it('THROWS on a grouping key containing the separator (would corrupt the positional parse)', () => {
     const mgr = new CloudInfraOutput();
     const sa = { id: out('id') } as unknown as OutputResource;
