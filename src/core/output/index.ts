@@ -14,4 +14,8 @@
 export { CloudInfraOutput } from './output-manager';
 
 // Export types
-export type { OutputResource, OutputResourceEntry } from './output-manager';
+export type {
+  OutputResource,
+  OutputResourceEntry,
+  FlatOutputRecord,
+} from './output-manager';
