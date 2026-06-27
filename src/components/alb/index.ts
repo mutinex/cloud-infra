@@ -43,7 +43,11 @@ import { deriveRegion } from '../../core/helpers';
 import { ValidationError, ResourceError } from '../../core/errors';
 import { PulumiTypeDetector } from '../../core/pulumi-type-detector';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 import { resolveGlobalAddress, resolveRegionalAddress } from './address';
 import { resolveGlobalProxy, resolveRegionalProxy } from './proxy';
@@ -83,6 +87,30 @@ export const CloudInfraAlbConfigSchema = z
   .passthrough();
 
 export type CloudInfraAlbConfig = AlbConfig;
+
+/**
+ * Name-first construction args for `CloudInfraAlb` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the ALB config ({@link CloudInfraAlbConfig})
+ * into a single args object, so an ALB can be built as
+ * `new CloudInfraAlb("lb", { domain: "gl", target: {...}, portRange: "443" })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the ALB config — every child (Address, URL map, proxy,
+ * SSL certificate, forwarding rule) derives its name/type-token/parent/alias/
+ * labels/opts from the meta + config exactly as the meta-first path (F2).
+ *
+ * No `Omit` is needed here: {@link CloudInfraAlbConfig} is the
+ * `GlobalAlbConfig | RegionAlbConfig` union, and NEITHER member carries a
+ * `location` field (global/regional selection is driven by `domain` →
+ * `isGlobal`, and the region is derived via `deriveRegion(meta)`), so there is
+ * no collision with {@link NamingArgs.location}. The single
+ * {@link NamingArgs.location} drives both the generated name and (for regional
+ * ALBs) the resolved region.
+ */
+export type CloudInfraAlbArgs = NamingArgs & CloudInfraAlbConfig;
 
 /** Pulumi type token for the ALB component. */
 export const CLOUD_INFRA_ALB_TYPE = 'cloud-infra:alb:CloudInfraAlb';
@@ -134,7 +162,28 @@ export class CloudInfraAlb extends CloudInfraComponent {
     | gcp.compute.RegionSslCertificate;
 
   /**
-   * Creates a new CloudInfraAlb instance.
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the ALB config are folded
+   * into a single args object; the name is resolved into a `CloudInfraMeta`
+   * internally with byte-identical naming (Frozen Contract F1). Every child's
+   * name, type token, parent, alias, labels and opts are derived exactly as the
+   * meta-first path (F2).
+   *
+   * @param name - Logical name for the load balancer
+   * @param args - Naming metadata + ALB configuration (forwarding rule + target)
+   * @param opts - Optional Pulumi component resource options
+   * @throws {ValidationError} If the configuration is invalid or name is an array
+   * @throws {ResourceError} If resource creation fails
+   */
+  constructor(
+    name: string,
+    args: CloudInfraAlbArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraAlb(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
    *
    * @param meta - Metadata configuration for resource naming and location
    * @param config - ALB configuration including forwarding rule and target settings
@@ -145,7 +194,29 @@ export class CloudInfraAlb extends CloudInfraComponent {
     meta: CloudInfraMeta,
     config: CloudInfraAlbConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraAlbArgs | CloudInfraAlbConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair BEFORE super(). For the
+    // name-first path, split the naming metadata out of the args; everything
+    // else is the ALB config passed straight through (consumed UNCHANGED below
+    // by all child creation + validation). Only meta-acquisition is rerouted —
+    // every child's name/type-token/parent/alias/labels/opts is unchanged (F2).
+    let meta: CloudInfraMeta;
+    let config: CloudInfraAlbConfig;
+    if (typeof nameOrMeta === 'string') {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraAlbArgs;
+      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
+      config = rest as CloudInfraAlbConfig;
+    } else {
+      meta = nameOrMeta;
+      config = argsOrConfig as CloudInfraAlbConfig;
+    }
+
     // Register the component node FIRST (super must precede any `this` use).
     // `meta.getName()`/`getDomain()` do not touch `this`, so they are safe
     // here. The generated NAME is kept byte-identical (Frozen Contract F2) —
