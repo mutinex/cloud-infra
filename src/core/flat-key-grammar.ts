@@ -111,9 +111,34 @@ export function deriveServiceAliasFallback(type: string): string {
  * Resolves the short `service` segment for a flat-output key from a full Pulumi
  * type token: the explicit {@link serviceAliasMap} entry when present, else the
  * deterministic {@link deriveServiceAliasFallback}.
+ *
+ * When falling back, THROW if the derived alias collides with an alias already
+ * assigned to a DIFFERENT type in {@link serviceAliasMap}: an unmapped future
+ * type must not silently shadow an explicit alias (e.g. `sa`/`run`) and so be
+ * read back as the wrong resource. The fix is to add an explicit, distinct
+ * entry for the new type to {@link serviceAliasMap}.
  */
 export function getServiceAlias(type: string): string {
-  return serviceAliasMap[type] ?? deriveServiceAliasFallback(type);
+  const explicit = serviceAliasMap[type];
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  const derived = deriveServiceAliasFallback(type);
+  // The derived alias must be unique against every EXPLICIT alias. If some
+  // other (different) type already owns this alias, the fallback would compose
+  // the same `service` segment and silently collide with that type on read.
+  for (const [mappedType, mappedAlias] of Object.entries(serviceAliasMap)) {
+    if (mappedAlias === derived && mappedType !== type) {
+      throw new Error(
+        `Flat-output service alias collision: the unmapped type '${type}' ` +
+          `derives the fallback alias '${derived}', which is already the ` +
+          `explicit alias of '${mappedType}'. An unmapped type must not silently ` +
+          `shadow another type's service segment — add an EXPLICIT, distinct ` +
+          `entry for '${type}' to serviceAliasMap.`
+      );
+    }
+  }
+  return derived;
 }
 
 /**

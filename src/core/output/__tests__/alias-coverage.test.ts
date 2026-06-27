@@ -101,6 +101,22 @@ describe('flat-output service alias coverage', () => {
     expect(deriveServiceAliasFallback('nocolon')).toBe('nocolon');
   });
 
+  it('getServiceAlias THROWS when an unmapped type derives an alias already owned by an explicit type', () => {
+    // `gcp:foo:Sa` is not in serviceAliasMap, so it falls back to the lowercased
+    // final token 'sa' — which is the EXPLICIT alias of gcp:serviceaccount:Account.
+    // Allowing it would let the unmapped type silently shadow the SA service
+    // segment and be read back as a service account. It must throw instead.
+    expect(() => getServiceAlias('gcp:foo:Sa')).toThrow(
+      /service alias collision/
+    );
+    expect(() => getServiceAlias('gcp:foo:Sa')).toThrow(
+      /already the explicit alias of 'gcp:serviceaccount:Account'/
+    );
+    // A genuinely novel fallback (no collision with any explicit alias) still
+    // resolves silently — the guard fires ONLY on a real collision.
+    expect(getServiceAlias('gcp:foo:BrandNewWidget')).toBe('brandnewwidget');
+  });
+
   it('the two alias tables are consistent: every resourceTypeMap alias resolves to the SAME service segment as its full type', () => {
     // The consumer's flat `{ type }` disambiguator resolves a short alias
     // through `resourceTypeMap` (alias → full type) and then `getServiceAlias`
