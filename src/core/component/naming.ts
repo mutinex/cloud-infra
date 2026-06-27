@@ -25,6 +25,18 @@
  * `preview` is supplied as an OBJECT discriminator (`{ preview }`) rather than a
  * bare string so the caller-supplied preview token rides along with the mode.
  * In meta.ts, `preview` wins over every omit/location branch, matching F1.
+ *
+ * ## Scope (WS-DX1a foundation)
+ *
+ * This surface covers the SINGLE-NAME regional/global formula set — exactly the
+ * single-resource components (Bucket is the proof; Account etc. follow). It does
+ * NOT yet express:
+ *   - **bulk / multi-name** components (`name: string[]` → `getNames()`), and
+ *   - the **zonal** instance formula (`getName(zone)` → `generateZonalName`,
+ *     a distinct 6th naming surface).
+ * Those are deliberate follow-up sweeps; `resolveMeta`'s `name: string` and the
+ * absence of a zonal `NamingMode` will need widening before a bulk/zonal/
+ * multi-resource component adopts this pattern. See WS-DX1 report.
  */
 
 import { CloudInfraMeta } from '../meta';
@@ -50,21 +62,25 @@ export type NamingMode =
   | { preview: string };
 
 /**
- * Name-first construction arguments shared by all v2 components.
+ * Name-first construction arguments shared by v2 single-name components.
  *
  * Everything here is naming metadata that v1 callers used to pass through a
  * hand-built {@link CloudInfraMeta}. A component's own config (Pulumi resource
  * args) is a SEPARATE argument — these are only the naming inputs.
  */
 export interface NamingArgs {
-  /** Org domain (`au` | `us` | `gl`). Drives default region + the `domain` label. */
-  domain?: string;
+  /**
+   * Org domain (`au` | `us` | `gl`). Drives default region + the `domain` label.
+   * Typed from the meta schema so an invalid domain is a COMPILE error, not a
+   * deferred Zod runtime failure.
+   */
+  domain?: CloudInfraMetaInput['domain'];
   /**
    * Explicit GCP location: single region/zone, multi-region identifier, or a
    * two-element dual-region array. If omitted, the default region for `domain`
-   * is used.
+   * is used. Typed from the meta schema (same accepted set as meta-first).
    */
-  location?: string | string[];
+  location?: CloudInfraMetaInput['location'];
   /** Custom prefix; overrides the Pulumi-project-derived prefix. */
   prefix?: string;
   /**
@@ -130,7 +146,7 @@ function namingModeToFlags(mode: NamingMode | undefined): {
 export function resolveMeta(name: string, args?: NamingArgs): CloudInfraMeta;
 export function resolveMeta(
   meta: CloudInfraMeta,
-  config?: unknown
+  _config?: unknown
 ): CloudInfraMeta;
 export function resolveMeta(
   nameOrMeta: string | CloudInfraMeta,
@@ -146,10 +162,8 @@ export function resolveMeta(
 
   const metaInput: CloudInfraMetaInput = {
     name: nameOrMeta,
-    ...(args.domain !== undefined ? { domain: args.domain as never } : {}),
-    ...(args.location !== undefined
-      ? { location: args.location as never }
-      : {}),
+    ...(args.domain !== undefined ? { domain: args.domain } : {}),
+    ...(args.location !== undefined ? { location: args.location } : {}),
     ...(args.prefix !== undefined ? { prefix: args.prefix } : {}),
     ...flags,
   };

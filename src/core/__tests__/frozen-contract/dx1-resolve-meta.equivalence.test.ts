@@ -106,6 +106,16 @@ describe('DX1 — resolveMeta passthrough + non-default naming args', () => {
     expect(viaNameFirst).toBe(viaMetaFirst);
   });
 
+  it("'no-location' equals a hand-built { omitDomain: true } (flag choice is F1-irrelevant)", () => {
+    // The helper maps 'no-location' to `omitLocation`, but meta.ts folds
+    // omitDomain || omitLocation into the same branch. Prove the name-first
+    // 'no-location' is byte-identical to a v1 caller who used omitDomain.
+    const viaNameFirst = nameFirst('no-location').getName();
+    const viaOmitDomain = baseline({ omitDomain: true }).getName();
+    expect(viaNameFirst).toBe('p-api');
+    expect(viaNameFirst).toBe(viaOmitDomain);
+  });
+
   it('forwards dual-region array → joined region code (NOT nam4)', () => {
     const viaNameFirst = resolveMeta(NAME, {
       domain: DOMAIN,

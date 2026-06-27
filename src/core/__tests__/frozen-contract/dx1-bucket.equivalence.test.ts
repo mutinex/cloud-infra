@@ -118,3 +118,33 @@ describe('DX1 — name-first Bucket === meta-first Bucket (name + URN)', () => {
     expect(nameFirstComponentUrn).toContain(BUCKET_TYPE);
   });
 });
+
+describe('DX1 — name-first Bucket honours a non-default NamingMode end-to-end', () => {
+  it("naming: 'literal' === meta-first { omitPrefix, omitLocation } (name + URN)", async () => {
+    // Exercises a non-conventional mode THROUGH the bucket constructor (not just
+    // resolveMeta), proving the overload forwards `naming` into the meta.
+    const metaFirst = new CloudInfraBucket(
+      new CloudInfraMeta({
+        name: 'static',
+        domain: 'au',
+        omitPrefix: true,
+        omitLocation: true,
+      })
+    );
+    const nameFirst = new CloudInfraBucket('static', {
+      domain: 'au',
+      naming: 'literal',
+    });
+
+    const mfName = await outStr(metaFirst.getName());
+    const nfName = await outStr(nameFirst.getName());
+    expect(nfName).toBe(mfName);
+    // `literal` → bare `name`, so the bucket name is exactly "static".
+    expect(nfName).toBe('static');
+
+    expect(await urnOf(nameFirst)).toBe(await urnOf(metaFirst));
+    expect(await urnOf(nameFirst.getBucket())).toBe(
+      await urnOf(metaFirst.getBucket())
+    );
+  });
+});
