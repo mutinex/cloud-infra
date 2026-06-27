@@ -29,14 +29,18 @@
  * ## Scope (WS-DX1a foundation)
  *
  * This surface covers the SINGLE-NAME regional/global formula set — exactly the
- * single-resource components (Bucket is the proof; Account etc. follow). It does
- * NOT yet express:
- *   - **bulk / multi-name** components (`name: string[]` → `getNames()`), and
+ * single-resource components (Bucket is the proof; Account etc. follow) — PLUS
+ * the **bulk / multi-name** set (`name: string[]` → `getNames()`), added via the
+ * `resolveMeta(names: string[], args)` overload (DX2 bulk name-first sweep). The
+ * `string[]` overload reuses the SAME domain/location/prefix/`namingModeToFlags`
+ * mapping; only `name` differs, so a bulk meta-first caller and the equivalent
+ * name-first caller yield an indistinguishable meta (F1). It does NOT yet
+ * express:
  *   - the **zonal** instance formula (`getName(zone)` → `generateZonalName`,
  *     a distinct 6th naming surface).
- * Those are deliberate follow-up sweeps; `resolveMeta`'s `name: string` and the
- * absence of a zonal `NamingMode` will need widening before a bulk/zonal/
- * multi-resource component adopts this pattern. See WS-DX1 report.
+ * That remains a deliberate follow-up sweep; the absence of a zonal `NamingMode`
+ * will need widening before a zonal/multi-resource component adopts this
+ * pattern. See WS-DX1 report.
  */
 
 import { CloudInfraMeta } from '../meta';
@@ -133,10 +137,16 @@ function namingModeToFlags(mode: NamingMode | undefined): {
  *
  * This is the single bridge every name-first component uses. It is overloaded:
  *
- * - `resolveMeta(name: string, args: NamingArgs)` — name-first: builds a
+ * - `resolveMeta(name: string, args: NamingArgs)` — name-first single: builds a
  *   `CloudInfraMeta` from `{ name, domain, location, prefix }` plus the flags
  *   the {@link NamingMode} maps to. Output is byte-identical (F1) to a
  *   hand-built meta with the equivalent flags.
+ * - `resolveMeta(names: string[], args: NamingArgs)` — name-first multi/bulk:
+ *   identical to the single overload except `name` is the supplied `string[]`.
+ *   A bulk meta-first caller who passed `new CloudInfraMeta({ name: [...],
+ *   domain, ... })` and a name-first caller passing the same array + the
+ *   equivalent {@link NamingArgs} yield an INDISTINGUISHABLE meta (F1 →
+ *   `getNames()`/`getInputName()` byte-identical).
  * - `resolveMeta(meta: CloudInfraMeta, _config?)` — meta-first (legacy/deprecated):
  *   returns the meta unchanged.
  *
@@ -144,12 +154,13 @@ function namingModeToFlags(mode: NamingMode | undefined): {
  * forward their `(metaOrName, config)` argument pair uniformly; it is ignored.
  */
 export function resolveMeta(name: string, args?: NamingArgs): CloudInfraMeta;
+export function resolveMeta(names: string[], args?: NamingArgs): CloudInfraMeta;
 export function resolveMeta(
   meta: CloudInfraMeta,
   _config?: unknown
 ): CloudInfraMeta;
 export function resolveMeta(
-  nameOrMeta: string | CloudInfraMeta,
+  nameOrMeta: string | string[] | CloudInfraMeta,
   argsOrConfig?: NamingArgs | unknown
 ): CloudInfraMeta {
   // Meta-first: pass the existing meta straight through (no rebuild → identical).
@@ -160,6 +171,9 @@ export function resolveMeta(
   const args = (argsOrConfig as NamingArgs | undefined) ?? {};
   const flags = namingModeToFlags(args.naming);
 
+  // Name-first (single string OR multi-name string[]). The `name` field rides
+  // through unchanged — a `string[]` populates `meta.getNames()`/`getInputName`
+  // exactly as a hand-built bulk meta would.
   const metaInput: CloudInfraMetaInput = {
     name: nameOrMeta,
     ...(args.domain !== undefined ? { domain: args.domain } : {}),
