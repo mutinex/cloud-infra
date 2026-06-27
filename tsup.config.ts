@@ -1,7 +1,8 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  target: 'esnext',
+  // Aligned with tsconfig.json `target` (ES2021).
+  target: 'es2021',
   entry: ['src/index.ts'],
   format: ['cjs', 'esm'],
   splitting: false,
@@ -17,7 +18,7 @@ export default defineConfig({
       strict: true,
       skipLibCheck: true,
       moduleResolution: 'node',
-      target: 'ES2020',
+      target: 'ES2021',
       module: 'ESNext',
     },
   },
