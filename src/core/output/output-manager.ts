@@ -4,12 +4,10 @@
 import * as pulumi from '@pulumi/pulumi';
 import { CloudInfraMeta } from '../meta';
 import {
-  GcpMultiRegions,
-  GcpPredefinedDualRegions,
-  GcpDualRegionLocations,
-  getRegionCode,
-} from '../meta/locations';
-import { FLAT_KEY_SEPARATOR, getServiceAlias } from '../reference/config';
+  FLAT_KEY_SEPARATOR,
+  getServiceAlias,
+  deriveRegionSegment,
+} from '../flat-key-grammar';
 
 /**
  * Defines the structure for a resource entry that can be recorded by the
@@ -103,24 +101,6 @@ export interface OutputResourceEntry {
 export type OutputResource = pulumi.CustomResource & OutputResourceEntry;
 
 /**
- * Internal addressing record for one recorded resource. Carries the inline
- * addressing (`key`/`type`/`domain`) plus the same resource fields as the
- * nested {@link OutputResourceEntry}. This is kept as an internal bookkeeping
- * shape that {@link CloudInfraOutput.getFlatOutputs} projects into the public
- * flat KEYED MAP — it is no longer the public return type.
- *
- * @internal
- */
-export interface FlatOutputRecord extends OutputResourceEntry {
-  /** The grouping key the resource was recorded under. */
-  key: string;
-  /** The resource type, e.g. `"gcp:serviceaccount:Account"`. */
-  type: string;
-  /** The domain (from `meta.getDomain()`), e.g. `"au"`. */
-  domain: string;
-}
-
-/**
  * The SCALAR string fields of {@link OutputResourceEntry} that are emitted as
  * individual top-level keys in the flat KEYED MAP. NON-scalar fields (`urls`
  * array, `customPlacementConfig` object) are intentionally EXCLUDED — they
@@ -142,39 +122,6 @@ const FLAT_SCALAR_FIELDS = [
   'number',
   'version',
 ] as const satisfies readonly (keyof OutputResourceEntry)[];
-
-/**
- * Derives the deterministic short `region` segment for a flat-output key from
- * a {@link CloudInfraMeta}, mirroring the `<region>` naming used elsewhere:
- *
- *   - single region (e.g. `us-central1`) → `getRegionCode` → `us-c1`;
- *   - multi-region code (e.g. `us`, `eu`, `asia`) → the token verbatim;
- *   - dual-region (array, e.g. `[australia-southeast1, australia-southeast2]`)
- *     → `meta.getLocation()` resolves it to its canonical multi/dual-region
- *     token (e.g. `au`, `nam4`) which is used verbatim.
- *
- * The choice for multi/dual regions (use the canonical GCP location token
- * rather than concatenating per-region codes) is documented in
- * `core/output/README.md`; it is deterministic and collision-stable.
- */
-const MULTI_REGION_TOKENS: ReadonlySet<string> = new Set<string>([
-  ...GcpMultiRegions,
-  ...GcpPredefinedDualRegions,
-  ...GcpDualRegionLocations,
-]);
-
-function deriveRegionSegment(meta: CloudInfraMeta): string {
-  // `getLocation()` collapses a dual-region array to its canonical token, so it
-  // returns a single string: a single region, a multi-region code, or a
-  // dual-region code.
-  const location = meta.getLocation();
-  // Multi-region / dual-region canonical token (e.g. "us", "eu", "au", "nam4")
-  // is used verbatim; only a true single region is shortened via getRegionCode.
-  if (MULTI_REGION_TOKENS.has(location)) {
-    return location;
-  }
-  return getRegionCode(location);
-}
 
 /**
  * Manages structured output recording for Pulumi resources.
@@ -225,6 +172,25 @@ export class CloudInfraOutput {
    * @private
    */
   private readonly flat: Record<string, pulumi.Output<string>> = {};
+
+  /**
+   * Tracks which recorded resource OWNS each flat-key PREFIX
+   * (`<domain>.<service>[.<region>].<name>`). The owner identity is the
+   * `(resourceType, groupingKey)` pair that produced the prefix.
+   *
+   * The per-key collision guard ({@link flat}) only fires when two resources
+   * collide on the SAME `prefix.field`. Two DIFFERENT resources that compose an
+   * identical prefix but emit DISJOINT field sets would each pass that guard and
+   * then silently MERGE into one fabricated record on the consumer side (which
+   * groups by prefix). This map closes that gap: the first writer of a prefix
+   * claims it, and any later write under the same prefix by a different
+   * `(resourceType, groupingKey)` THROWS.
+   * @private
+   */
+  private readonly flatPrefixOwners = new Map<
+    string,
+    { resourceType: string; groupingKey: string }
+  >();
 
   /**
    * Creates a new instance of the `CloudInfraOutput`.
@@ -285,32 +251,44 @@ export class CloudInfraOutput {
     // The region segment is present iff the entry carries a `location` field
     // (regional resources). Global resources (SA, folder, project, WIP, …) do
     // not set `location`, so the segment is omitted.
-    const entryFields = entry as unknown as Record<string, unknown>;
+    // A typed read-only view of the entry's fields. Every scalar field is a
+    // `pulumi.Output<string>`; the non-scalar fields (`urls`, `customPlacementConfig`)
+    // are never read here (they are not in FLAT_SCALAR_FIELDS). Typing the
+    // accessor as `Output<unknown>` lets us coerce conditionally without the
+    // former `entry as unknown as Record<string, unknown>` double-cast.
+    const entryFields = entry as {
+      [K in keyof OutputResourceEntry]?: pulumi.Output<unknown>;
+    } & { location?: pulumi.Output<unknown> };
     const hasLocation = entryFields.location !== undefined;
     const regionSegment = hasLocation ? deriveRegionSegment(meta) : undefined;
 
     const sep = FLAT_KEY_SEPARATOR;
 
     // HARD INVARIANT: the key grammar is positional and the consumer
-    // (`CloudInfraReference.groupFlatMap`) parses segments by count — so NO
-    // addressing segment may itself contain the separator, or the round-trip
-    // silently corrupts (a dotted name would shift the region/name split).
-    // Reject it here, at the producer, with a clear message rather than emitting
-    // an un-parseable key. `domain` (au/us/gl) and `service` (alias `[a-z0-9]+`)
-    // are already separator-free by construction; `groupingKey` is user-supplied
-    // and `regionSegment` is defensive.
+    // (`CloudInfraReference.groupFlatMap`) parses segments by count — so each
+    // addressing segment must be a SAFE token (no separator, whitespace,
+    // control, or unicode), or the round-trip silently corrupts (a dotted name
+    // would shift the region/name split; whitespace/unicode breaks a plain
+    // `requireOutput("<key>")`). Validate a POSITIVE charset here, at the
+    // producer, with a clear message rather than emitting an un-parseable key.
+    // `domain` (au/us/gl) and `service` (alias `[a-z0-9]+`) are already safe by
+    // construction; `groupingKey` is user-supplied and `regionSegment` is
+    // defensive.
+    const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
     for (const [segName, segValue] of [
       ['domain', domain],
       ['service', service],
       ['region', regionSegment],
       ['name (grouping key)', groupingKey],
     ] as const) {
-      if (segValue !== undefined && segValue.includes(sep)) {
+      if (segValue !== undefined && !SAFE_SEGMENT.test(segValue)) {
         throw new Error(
-          `Invalid flat-output ${segName} segment '${segValue}': it must not ` +
-            `contain the key separator '${sep}'. The flat-output key grammar ` +
-            `'<domain>.<service>[.<region>].<name>.<field>' is positional, so a ` +
-            `separator inside a segment would corrupt the consumer's parse.`
+          `Invalid flat-output ${segName} segment '${segValue}': it must match ` +
+            `${SAFE_SEGMENT} (letters, digits, '_' or '-' only) — no separator ` +
+            `'${sep}', whitespace, control or unicode characters. The flat-output ` +
+            `key grammar '<domain>.<service>[.<region>].<name>.<field>' is ` +
+            `positional and is read by a plain stack-output lookup, so an unsafe ` +
+            `segment would corrupt the consumer's parse.`
         );
       }
     }
@@ -318,6 +296,31 @@ export class CloudInfraOutput {
       regionSegment !== undefined
         ? `${domain}${sep}${service}${sep}${regionSegment}${sep}${groupingKey}`
         : `${domain}${sep}${service}${sep}${groupingKey}`;
+
+    // PREFIX OWNERSHIP: the per-key collision guard below only catches two
+    // resources colliding on the same `prefix.field`. Two DIFFERENT resources
+    // composing the same prefix with DISJOINT field sets would each pass that
+    // guard yet silently merge into ONE record on read (the consumer groups by
+    // prefix). Track the owning `(resourceType, groupingKey)` of each prefix and
+    // reject any write under a prefix already owned by a different resource.
+    const owner = this.flatPrefixOwners.get(prefix);
+    if (
+      owner !== undefined &&
+      (owner.resourceType !== resourceType || owner.groupingKey !== groupingKey)
+    ) {
+      throw new Error(
+        `Flat-output prefix collision: the prefix '${prefix}' is already owned ` +
+          `by a different recorded resource ` +
+          `(resourceType '${owner.resourceType}', grouping key ` +
+          `'${owner.groupingKey}'); it cannot also be written by ` +
+          `(resourceType '${resourceType}', grouping key '${groupingKey}'). Two ` +
+          `distinct resources compose the same ` +
+          `'<domain>.<service>[.<region>].<name>' prefix and would silently ` +
+          `merge into one fabricated record on read. Disambiguate by giving ` +
+          `them distinct grouping keys (or domains/regions).`
+      );
+    }
+    this.flatPrefixOwners.set(prefix, { resourceType, groupingKey });
 
     for (const field of FLAT_SCALAR_FIELDS) {
       const value = entryFields[field];
@@ -333,9 +336,14 @@ export class CloudInfraOutput {
             `by giving them distinct grouping keys (or domains/regions).`
         );
       }
-      // Coerce Output<number> (e.g. project number) to Output<string> while
-      // keeping it lazy — never `.apply` to a plain string at record time.
-      this.flat[key] = (value as pulumi.Output<unknown>).apply(v => String(v));
+      // CONDITIONAL coercion: only the `number` field (e.g. a project number)
+      // carries a non-string runtime value, so coerce JUST that one to a string
+      // Output while staying lazy. Every other scalar is already
+      // `Output<string>` and is assigned by reference — no needless `.apply`.
+      this.flat[key] =
+        field === 'number'
+          ? value.apply(v => String(v))
+          : (value as pulumi.Output<string>);
     }
   }
 
