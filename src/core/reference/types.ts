@@ -63,20 +63,19 @@ export interface StackOutputs {
 }
 
 /**
- * Type representing one element of the NEW flat, self-describing output wire
- * (`CloudInfraOutput.getFlatOutputs()`). On the read side every field is a
- * plain (resolved) string, mirroring the producer's `FlatOutputRecord` minus
- * the `pulumi.Output` wrappers. `key` / `type` / `domain` carry the addressing
- * inline; the remaining fields are the same allow-list as {@link ResourceOutput}.
+ * The flat KEYED-MAP output wire (`CloudInfraOutput.getFlatOutputs()`), as seen
+ * on the READ side after JSON round-trip: a single-level map from a composed
+ * key (`<domain>.<service>[.<region>].<name>.<field>`) to a plain scalar
+ * string. Each composed key can also be a TOP-LEVEL stack output when the
+ * producer spreads the map onto its module exports
+ * (`Object.assign(exports, getFlatOutputs())`), enabling a one-hop
+ * `pulumi.StackReference.requireOutput("<key>")`.
+ *
+ * `CloudInfraReference` (flat mode) re-assembles a {@link ResourceOutput} by
+ * grouping every key that shares the leading
+ * `<domain>.<service>[.<region>].<name>` prefix.
  */
-export interface FlatStackOutput extends ResourceOutput {
-  /** The grouping key the resource was recorded under. */
-  key: string;
-  /** The resource type (e.g. `"gcp:serviceaccount:Account"`). */
-  type: string;
-  /** The domain (e.g. `"au"`). */
-  domain: string;
-}
+export type FlatStackOutput = Record<string, string>;
 
 /**
  * Type representing a resource output with common properties

@@ -3,9 +3,13 @@
  */
 import * as pulumi from '@pulumi/pulumi';
 import * as crypto from 'crypto';
-import { getDefaultOutputKey, resourceTypeMap } from './config';
+import {
+  getDefaultOutputKey,
+  resourceTypeMap,
+  getServiceAlias,
+  FLAT_KEY_SEPARATOR,
+} from './config';
 import type {
-  FlatStackOutput,
   ReferenceDomain,
   ReferenceGetOptions,
   ReferenceOptions,
@@ -350,16 +354,19 @@ export class CloudInfraReference {
   }
 
   /**
-   * Resolves a resource in FLAT mode (Move 4) by scanning the self-describing
-   * `FlatOutputRecord[]` array emitted by `CloudInfraOutput.getFlatOutputs()`.
+   * Resolves a resource in FLAT mode by re-assembling a {@link ResourceOutput}
+   * from the flat KEYED MAP emitted by `CloudInfraOutput.getFlatOutputs()`.
    *
-   * Matching mirrors the nested cross-type-scan semantics (DX3): records are
-   * filtered by `key === name`, then optionally narrowed by `type` (resolved
-   * through the same `resourceTypeMap` alias table) and by `domain` (the
+   * The map's keys are `<domain>.<service>[.<region>].<name>.<field>`. This
+   * reader groups every key sharing the same
+   * `<domain>.<service>[.<region>].<name>` prefix into one record, collecting
+   * each `.<field>` entry as a property. Matching mirrors the nested
+   * cross-type-scan semantics: keys are grouped, then filtered by `name`, and
+   * optionally narrowed by `type` (resolved through `getServiceAlias`/the
+   * `resourceTypeMap` alias table → a service segment) and by `domain` (the
    * configured domain or a per-lookup override; an empty configured domain
-   * means "any domain"). Exactly one survivor is returned; multiple survivors
-   * throw an ambiguity error listing the candidate `{type, domain}` pairs and
-   * suggesting a disambiguator; zero survivors throw not-found.
+   * means "any domain"). Exactly one surviving group is returned; multiple
+   * groups throw an ambiguity error; zero groups throw not-found.
    * @private
    */
   private resolveFlat(
@@ -368,28 +375,34 @@ export class CloudInfraReference {
     domainOverride?: string
   ): pulumi.Output<ResourceOutput> {
     const domainFilter = domainOverride ?? this.domain.domain;
-    const normalizedType =
+    // The caller's `type` (alias or full Pulumi type) → the SERVICE segment the
+    // producer used. `getServiceAlias` is keyed by full type, so resolve an
+    // alias through `resourceTypeMap` first, then map type → service.
+    const serviceFilter =
       type !== undefined
-        ? (resourceTypeMap[type.toLowerCase()] ?? type)
+        ? getServiceAlias(resourceTypeMap[type.toLowerCase()] ?? type)
         : undefined;
 
     return this.stackRef.getOutput(this.outputKey).apply((raw: unknown) => {
-      if (!Array.isArray(raw)) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
         throw new Error(
-          `Invalid flat stack output structure: expected an array, got ${typeof raw}. ` +
-            `Did the source stack export 'CloudInfraOutput.getFlatOutputs()'?`
+          `Invalid flat stack output structure: expected a keyed object, got ` +
+            `${Array.isArray(raw) ? 'array' : typeof raw}. Did the source stack ` +
+            `export 'CloudInfraOutput.getFlatOutputs()'?`
         );
       }
 
-      const records = raw as FlatStackOutput[];
-      const matches = records.filter(r => {
-        if (!r || typeof r !== 'object') return false;
-        if (r.key !== name) return false;
-        if (normalizedType !== undefined && r.type !== normalizedType) {
+      const groups = CloudInfraReference.groupFlatMap(
+        raw as Record<string, unknown>
+      );
+
+      const matches = groups.filter(g => {
+        if (g.name !== name) return false;
+        if (serviceFilter !== undefined && g.service !== serviceFilter) {
           return false;
         }
         // Empty configured domain (and no override) => do not scope by domain.
-        if (domainFilter !== '' && r.domain !== domainFilter) {
+        if (domainFilter !== '' && g.domain !== domainFilter) {
           return false;
         }
         return true;
@@ -399,37 +412,81 @@ export class CloudInfraReference {
         domainFilter !== '' ? ` under domain '${domainFilter}'` : '';
 
       const match = CloudInfraReference.selectUniqueMatch(
-        matches.map(r => ({ record: r, resource: r as ResourceOutput })),
+        matches.map(g => ({ group: g, resource: g.record })),
         {
           name,
           notFound: `Resource '${name}' not found in flat outputs${domainHint}.`,
           ambiguous: candidates =>
             `Resource '${name}' is ambiguous${domainHint} in flat outputs: it ` +
             `matches multiple records [${candidates}]. Disambiguate with a ` +
-            `type, e.g. get('${name}', { type: '${matches[0].type}' }).`,
-          candidate: m => `{ type: '${m.record.type}', domain: '${m.record.domain}' }`,
+            `type, e.g. get('${name}', { type: '${matches[0].service}' }).`,
+          candidate: m =>
+            `{ service: '${m.group.service}', domain: '${m.group.domain}' }`,
         }
       );
 
-      // Strip the inline addressing (`key`/`type`/`domain`) so the flat `.raw`
-      // surfaces the SAME `ResourceOutput` shape as the nested reader (cross-mode
-      // `raw` parity — the nested wire never carries addressing in the record).
-      return CloudInfraReference.stripFlatAddressing(match as FlatStackOutput);
+      return match;
     });
   }
 
   /**
-   * Projects a {@link FlatStackOutput} to a clean {@link ResourceOutput} by
-   * dropping the inline addressing fields (`key`/`type`/`domain`). Keeps the
-   * flat reader's resolved record byte-shape-identical to the nested reader's.
+   * Parses the flat KEYED MAP back into grouped records. Each key is
+   * `<domain>.<service>[.<region>].<name>.<field>`; keys sharing the leading
+   * `<domain>.<service>[.<region>].<name>` are merged into a single record with
+   * one property per `<field>`.
+   *
+   * Parsing is positional from BOTH ends so it tolerates neither dots in the
+   * `name`/`service` nor an unknown region: segment[0] is the domain, the LAST
+   * segment is the field, the SECOND-TO-LAST is the name, segment[1] is the
+   * service, and a 5-segment key carries the region at segment[2] (a 4-segment
+   * key has no region). Malformed keys (< 4 segments) are skipped.
    * @private
    */
-  private static stripFlatAddressing(record: FlatStackOutput): ResourceOutput {
-    const { key: _key, type: _type, domain: _domain, ...rest } = record;
-    void _key;
-    void _type;
-    void _domain;
-    return rest;
+  private static groupFlatMap(map: Record<string, unknown>): Array<{
+    domain: string;
+    service: string;
+    region?: string;
+    name: string;
+    record: ResourceOutput;
+  }> {
+    const sep = FLAT_KEY_SEPARATOR;
+    const byPrefix = new Map<
+      string,
+      {
+        domain: string;
+        service: string;
+        region?: string;
+        name: string;
+        record: Record<string, unknown>;
+      }
+    >();
+
+    for (const [key, value] of Object.entries(map)) {
+      const seg = key.split(sep);
+      // Need at least domain.service.name.field (4) — optionally +region (5).
+      if (seg.length !== 4 && seg.length !== 5) continue;
+      const domain = seg[0];
+      const service = seg[1];
+      const field = seg[seg.length - 1];
+      const name = seg[seg.length - 2];
+      const region = seg.length === 5 ? seg[2] : undefined;
+
+      const prefix = seg.slice(0, seg.length - 1).join(sep);
+      let group = byPrefix.get(prefix);
+      if (!group) {
+        group = { domain, service, region, name, record: {} };
+        byPrefix.set(prefix, group);
+      }
+      group.record[field] = value;
+    }
+
+    return Array.from(byPrefix.values()).map(g => ({
+      domain: g.domain,
+      service: g.service,
+      region: g.region,
+      name: g.name,
+      record: g.record as ResourceOutput,
+    }));
   }
 
   /**
@@ -690,22 +747,22 @@ export class CloudInfraReference {
       });
     }
 
-    // Flat mode (Move 4): map each self-describing record straight through,
-    // surfacing its inline `domain`/`type`/`key` addressing.
+    // Flat mode: re-assemble every grouped record from the keyed map. The
+    // `type` surfaced here is the flat key's `service` segment (the producer
+    // emits the service alias, not the full Pulumi type).
     if (this.flat) {
       return this.stackRef.getOutput(this.outputKey).apply((raw: unknown) => {
-        if (!Array.isArray(raw)) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
           return [];
         }
-        return (raw as FlatStackOutput[])
-          .filter(r => r && typeof r === 'object')
-          .map(r => ({
-            domain: r.domain,
-            type: r.type,
-            name: r.key,
-            // Strip addressing so `record` matches the nested `all()` shape.
-            record: CloudInfraReference.stripFlatAddressing(r),
-          }));
+        return CloudInfraReference.groupFlatMap(
+          raw as Record<string, unknown>
+        ).map(g => ({
+          domain: g.domain,
+          type: g.service,
+          name: g.name,
+          record: g.record,
+        }));
       });
     }
 

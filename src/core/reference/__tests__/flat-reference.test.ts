@@ -1,12 +1,14 @@
 /**
- * Move 4 — flat reader mode on CloudInfraReference.
+ * Flat reader mode on CloudInfraReference (keyed-map wire).
  *
  * Constructing a reference with `{ flat: true }` resolves `get()` / `all()`
- * against the NEW flat `FlatOutputRecord[]` wire emitted by
- * `CloudInfraOutput.getFlatOutputs()`, instead of the nested
- * `root[domain][type][name]` wire. These tests pin that:
- *   - a record resolves by `key`, and its `.id`/`.email`/`.identifier` match
- *     the values a nested reader would surface for the same record;
+ * against the flat KEYED MAP emitted by `CloudInfraOutput.getFlatOutputs()`
+ * (keys `<domain>.<service>[.<region>].<name>.<field>` → scalar string),
+ * instead of the nested `root[domain][type][name]` wire. These tests pin that:
+ *   - a record re-assembles by grouping keys that share the
+ *     `<domain>.<service>[.<region>].<name>` prefix, and its
+ *     `.id`/`.email`/`.identifier` match the values a nested reader would
+ *     surface;
  *   - collisions disambiguate via `{ type }` (cross-record scan semantics);
  *   - `getIdentifier` stays byte-identical (F4) in both flat-with-domain and
  *     flat-without-domain shapes.
@@ -14,7 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Controllable mock StackReference. `getOutput(...).apply(fn)` runs `fn`
-// against the flat wire; `resolveFlat` returns a single record, and
+// against the flat keyed map; `resolveFlat` returns a single record, and
 // `buildRecord` chains a SECOND `.apply` over it (mimicking pulumi.Output).
 // `all()` consumes the first `.apply` result (an array) directly.
 const mockStackRef = {
@@ -31,34 +33,21 @@ vi.mock('@pulumi/pulumi', () => ({
 
 import { CloudInfraReference } from '../reference-manager';
 
-// Flat wire: a self-describing FlatOutputRecord[] (post-JSON, plain strings).
-const FLAT_WIRE = [
-  {
-    key: 'my-app',
-    type: 'gcp:serviceaccount:Account',
-    domain: 'au',
-    id: 'proj/sa/my-app',
-    name: 'my-app-sa',
-    email: 'my-app@proj.iam.gserviceaccount.com',
-    member: 'serviceAccount:my-app@proj.iam.gserviceaccount.com',
-  },
-  {
-    key: 'collision',
-    type: 'gcp:serviceaccount:Account',
-    domain: 'au',
-    id: 'sa-collision-id',
-    email: 'collision@proj.iam.gserviceaccount.com',
-  },
-  {
-    key: 'collision',
-    type: 'gcp:storage:Bucket',
-    domain: 'au',
-    id: 'bucket-collision-id',
-    name: 'collision-bucket',
-  },
-];
+// Flat wire: a keyed map `<domain>.<service>[.<region>].<name>.<field>` → string.
+// - my-app: a GLOBAL service account (no region segment).
+// - collision: a key shared by an SA and a (regional) bucket.
+const FLAT_WIRE: Record<string, string> = {
+  'au.sa.my-app.id': 'proj/sa/my-app',
+  'au.sa.my-app.name': 'my-app-sa',
+  'au.sa.my-app.email': 'my-app@proj.iam.gserviceaccount.com',
+  'au.sa.my-app.member': 'serviceAccount:my-app@proj.iam.gserviceaccount.com',
+  'au.sa.collision.id': 'sa-collision-id',
+  'au.sa.collision.email': 'collision@proj.iam.gserviceaccount.com',
+  'au.bucket.au-se1.collision.id': 'bucket-collision-id',
+  'au.bucket.au-se1.collision.name': 'collision-bucket',
+};
 
-describe('flat reader mode (Move 4)', () => {
+describe('flat reader mode (keyed map)', () => {
   beforeEach(() => {
     CloudInfraReference.clearCache();
     mockStackRef.getOutput.mockImplementation(() => ({
@@ -81,7 +70,7 @@ describe('flat reader mode (Move 4)', () => {
       outputKey: 'cloud-infra',
     });
 
-  it('resolves a record by key; .id/.email/.identifier match the nested values', () => {
+  it('re-assembles a record by key prefix; .id/.email/.name/.member match', () => {
     const ref = flatRef('au');
     const rec = ref.get('my-app');
     expect(rec.id).toBe('proj/sa/my-app');
@@ -95,7 +84,7 @@ describe('flat reader mode (Move 4)', () => {
     expect(rec.identifier).toBe(ref.getIdentifier('my-app'));
   });
 
-  it('cross-record scan resolves a key that exists under exactly one type', () => {
+  it('cross-record scan resolves a key that exists under exactly one service', () => {
     expect(flatRef('au').get('my-app').email).toBe(
       'my-app@proj.iam.gserviceaccount.com'
     );
@@ -104,21 +93,25 @@ describe('flat reader mode (Move 4)', () => {
   it('throws asking for { type } when a key is shared by multiple records', () => {
     const ref = flatRef('au');
     expect(() => ref.get('collision').id).toThrow(/is ambiguous/);
-    expect(() => ref.get('collision').id).toThrow(/gcp:serviceaccount:Account/);
-    expect(() => ref.get('collision').id).toThrow(/gcp:storage:Bucket/);
+    expect(() => ref.get('collision').id).toThrow(/service: 'sa'/);
+    expect(() => ref.get('collision').id).toThrow(/service: 'bucket'/);
   });
 
-  it('collision disambiguation by { type } (alias-resolved)', () => {
+  it('collision disambiguation by { type } (alias-resolved to a service)', () => {
     const ref = flatRef('au');
-    // Short alias "sa" → gcp:serviceaccount:Account.
+    // Short alias "sa" → service segment "sa".
     expect(ref.get('collision', { type: 'sa' }).id).toBe('sa-collision-id');
-    // Short alias "bucket" → gcp:storage:Bucket.
+    // Short alias "bucket" → service segment "bucket".
     expect(ref.get('collision', { type: 'bucket' }).id).toBe(
       'bucket-collision-id'
     );
     expect(ref.get('collision', { type: 'bucket' }).name).toBe(
       'collision-bucket'
     );
+    // Full Pulumi type also resolves to the right service.
+    expect(
+      ref.get('collision', { type: 'gcp:storage:Bucket' }).id
+    ).toBe('bucket-collision-id');
   });
 
   it('throws not-found when the key matches no record', () => {
@@ -129,14 +122,13 @@ describe('flat reader mode (Move 4)', () => {
 
   it('lazy missing-field error mirrors the nested reader', () => {
     // The bucket "collision" record has no email.
-    expect(() => flatRef('au').get('collision', { type: 'bucket' }).email).toThrow(
-      "'email' not present on 'collision'"
-    );
+    expect(() =>
+      flatRef('au').get('collision', { type: 'bucket' }).email
+    ).toThrow("'email' not present on 'collision'");
   });
 
   describe('domain scoping', () => {
     it('without a configured domain, scans across all domains and matches by key', () => {
-      // No domain => domain filter is "any"; "my-app" still resolves uniquely.
       const ref = flatRef(undefined);
       expect(ref.get('my-app').email).toBe(
         'my-app@proj.iam.gserviceaccount.com'
@@ -149,7 +141,6 @@ describe('flat reader mode (Move 4)', () => {
     it('a per-lookup { domain } scopes the flat scan', () => {
       const ref = flatRef('au');
       expect(ref.get('my-app', { domain: 'au' }).id).toBe('proj/sa/my-app');
-      // Wrong domain => not found.
       expect(() => ref.get('my-app', { domain: 'us' }).id).toThrow(
         /not found in flat outputs under domain 'us'/
       );
@@ -157,25 +148,19 @@ describe('flat reader mode (Move 4)', () => {
   });
 
   it('a per-lookup { domain } override wins over the configured domain', () => {
-    // Reference configured for "us" (no records) → override back to "au".
     const usRef = flatRef('us');
     expect(usRef.get('my-app', { domain: 'au' }).email).toBe(
       'my-app@proj.iam.gserviceaccount.com'
     );
   });
 
-  it('skips malformed (non-object) array elements during the scan', () => {
+  it('skips malformed (wrong-arity) keys during grouping', () => {
     mockStackRef.getOutput.mockImplementationOnce(() => {
-      const malformed = [
-        'not-an-object',
-        null,
-        {
-          key: 'lonely',
-          type: 'gcp:serviceaccount:Account',
-          domain: 'au',
-          email: 'lonely@proj.iam.gserviceaccount.com',
-        },
-      ];
+      const malformed = {
+        'too.short': 'x',
+        'a.b.c.d.e.f.too.long': 'y',
+        'au.sa.lonely.email': 'lonely@proj.iam.gserviceaccount.com',
+      };
       return {
         apply: (fn: (raw: unknown) => unknown) => {
           const resolved = fn(malformed);
@@ -190,16 +175,14 @@ describe('flat reader mode (Move 4)', () => {
     );
   });
 
-  it('.raw strips inline addressing (key/type/domain) for cross-mode parity', () => {
-    // `.raw` is the (mocked) pulumi.Output thenable; unwrap its single .apply
-    // to inspect the resolved resource object.
+  it('.raw surfaces the re-assembled resource (no addressing leaks in)', () => {
     const rawOutput = flatRef('au').get('my-app').raw as unknown as {
       apply: (cb: (r: Record<string, unknown>) => unknown) => unknown;
     };
     rawOutput.apply(raw => {
       expect(raw.id).toBe('proj/sa/my-app');
       expect(raw.email).toBe('my-app@proj.iam.gserviceaccount.com');
-      // Addressing fields must NOT leak into the resolved resource object.
+      // Only resource fields are present — no key/type/domain addressing.
       expect('key' in raw).toBe(false);
       expect('type' in raw).toBe(false);
       expect('domain' in raw).toBe(false);
@@ -208,55 +191,55 @@ describe('flat reader mode (Move 4)', () => {
   });
 
   describe('all()', () => {
-    it('returns every flat record with inline domain/type/name addressing', () => {
+    it('returns every grouped record with domain/service(type)/name addressing', () => {
       const entries = flatRef('au').all() as unknown as Array<{
         domain?: string;
         type?: string;
         name: string;
         record: Record<string, unknown>;
       }>;
+      // my-app (sa) + collision (sa) + collision (bucket) = 3 groups.
       expect(entries).toHaveLength(3);
       expect(entries).toContainEqual(
         expect.objectContaining({
           domain: 'au',
-          type: 'gcp:serviceaccount:Account',
+          type: 'sa',
           name: 'my-app',
         })
       );
       expect(entries).toContainEqual(
         expect.objectContaining({
           domain: 'au',
-          type: 'gcp:storage:Bucket',
+          type: 'bucket',
           name: 'collision',
         })
       );
     });
 
-    it('all() record is stripped of addressing (matches nested all() shape)', () => {
+    it('all() record contains only resource fields', () => {
       const entries = flatRef('au').all() as unknown as Array<{
         name: string;
         record: Record<string, unknown>;
       }>;
       const myApp = entries.find(e => e.name === 'my-app');
       expect(myApp?.record).toBeDefined();
-      expect('key' in myApp!.record).toBe(false);
-      expect('type' in myApp!.record).toBe(false);
-      expect('domain' in myApp!.record).toBe(false);
       expect(myApp!.record.id).toBe('proj/sa/my-app');
+      expect('key' in myApp!.record).toBe(false);
     });
   });
 
-  it('rejects a non-array flat wire with a helpful error', () => {
+  it('rejects a non-object flat wire with a helpful error', () => {
     mockStackRef.getOutput.mockImplementationOnce(() => ({
       apply: (fn: (raw: unknown) => unknown) => {
-        const resolved = fn({ not: 'an array' });
+        const resolved = fn(['not', 'a', 'map']);
         return Array.isArray(resolved)
           ? resolved
           : { apply: (cb: (r: unknown) => unknown) => cb(resolved) };
       },
     }));
+    // An array IS returned to all()/apply, but get() must reject it.
     expect(() => flatRef('au').get('my-app').id).toThrow(
-      /expected an array/
+      /expected a keyed object/
     );
   });
 });
