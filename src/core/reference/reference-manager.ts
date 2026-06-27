@@ -348,26 +348,49 @@ export class CloudInfraReference {
         }
       }
 
-      if (matches.length === 0) {
-        throw new Error(
-          `Resource '${name}' not found under domain '${domain}'.`
-        );
-      }
-
-      if (matches.length > 1) {
-        const candidateTypes = matches.map(m => m.type).join(', ');
-        // Echo a real candidate (the full Pulumi type resolves via the
-        // `resourceTypeMap[...] ?? resourceType` fall-through) so the hint is
-        // copy-pasteable rather than a `<type>` placeholder.
-        throw new Error(
+      // Echo a real candidate type (the full Pulumi type resolves via the
+      // `resourceTypeMap[...] ?? resourceType` fall-through) so the hint is
+      // copy-pasteable rather than a `<type>` placeholder.
+      return CloudInfraReference.selectUniqueMatch(matches, {
+        name,
+        notFound: `Resource '${name}' not found under domain '${domain}'.`,
+        ambiguous: candidates =>
           `Resource '${name}' is ambiguous under domain '${domain}': it ` +
-            `exists under multiple types [${candidateTypes}]. Disambiguate ` +
-            `with a type, e.g. get('${name}', { type: '${matches[0].type}' }).`
-        );
-      }
-
-      return matches[0].resource;
+          `exists under multiple types [${candidates}]. Disambiguate ` +
+          `with a type, e.g. get('${name}', { type: '${matches[0].type}' }).`,
+        candidate: m => m.type,
+      });
     });
+  }
+
+  /**
+   * Selects the single match from a cross-scan, or throws the not-found /
+   * ambiguity error. Shared by the nested cross-type scan ({@link resolve}) and
+   * the flat cross-record scan ({@link resolveFlat}) so the three-outcome
+   * contract (zero → not-found, one → return, many → ambiguity) cannot drift
+   * between the two wires. Each caller supplies its own (byte-stable) message
+   * strings and candidate formatter.
+   * @private
+   */
+  private static selectUniqueMatch<
+    M extends { resource: ResourceOutput },
+  >(
+    matches: M[],
+    messages: {
+      name: string;
+      notFound: string;
+      ambiguous: (candidates: string) => string;
+      candidate: (m: M) => string;
+    }
+  ): ResourceOutput {
+    if (matches.length === 0) {
+      throw new Error(messages.notFound);
+    }
+    if (matches.length > 1) {
+      const candidates = matches.map(messages.candidate).join(', ');
+      throw new Error(messages.ambiguous(candidates));
+    }
+    return matches[0].resource;
   }
 
   /**
@@ -419,25 +442,38 @@ export class CloudInfraReference {
       const domainHint =
         domainFilter !== '' ? ` under domain '${domainFilter}'` : '';
 
-      if (matches.length === 0) {
-        throw new Error(
-          `Resource '${name}' not found in flat outputs${domainHint}.`
-        );
-      }
-
-      if (matches.length > 1) {
-        const candidates = matches
-          .map(m => `{ type: '${m.type}', domain: '${m.domain}' }`)
-          .join(', ');
-        throw new Error(
-          `Resource '${name}' is ambiguous${domainHint} in flat outputs: it ` +
+      const match = CloudInfraReference.selectUniqueMatch(
+        matches.map(r => ({ record: r, resource: r as ResourceOutput })),
+        {
+          name,
+          notFound: `Resource '${name}' not found in flat outputs${domainHint}.`,
+          ambiguous: candidates =>
+            `Resource '${name}' is ambiguous${domainHint} in flat outputs: it ` +
             `matches multiple records [${candidates}]. Disambiguate with a ` +
-            `type, e.g. get('${name}', { type: '${matches[0].type}' }).`
-        );
-      }
+            `type, e.g. get('${name}', { type: '${matches[0].type}' }).`,
+          candidate: m => `{ type: '${m.record.type}', domain: '${m.record.domain}' }`,
+        }
+      );
 
-      return matches[0] as ResourceOutput;
+      // Strip the inline addressing (`key`/`type`/`domain`) so the flat `.raw`
+      // surfaces the SAME `ResourceOutput` shape as the nested reader (cross-mode
+      // `raw` parity — the nested wire never carries addressing in the record).
+      return CloudInfraReference.stripFlatAddressing(match as FlatStackOutput);
     });
+  }
+
+  /**
+   * Projects a {@link FlatStackOutput} to a clean {@link ResourceOutput} by
+   * dropping the inline addressing fields (`key`/`type`/`domain`). Keeps the
+   * flat reader's resolved record byte-shape-identical to the nested reader's.
+   * @private
+   */
+  private static stripFlatAddressing(record: FlatStackOutput): ResourceOutput {
+    const { key: _key, type: _type, domain: _domain, ...rest } = record;
+    void _key;
+    void _type;
+    void _domain;
+    return rest;
   }
 
   /**
@@ -541,12 +577,16 @@ export class CloudInfraReference {
     const proj = stackParts[1] ?? 'unkproj';
     const env = stackParts[2] ?? 'unkenv';
     const { domain } = this.domain;
-    // Emit the domain-suffixed form only when a domain is actually configured.
-    // Domain-optional mode never has one (=> ReferenceWithoutDomain F4 form);
-    // flat mode constructed WITHOUT a domain likewise falls to the domain-less
-    // form rather than emitting a dangling trailing `-`. Domain (nested or
-    // flat) mode WITH a domain appends `-${domain}` (F4 domain form).
-    if (this.domainOptional || domain === '') {
+    // F4: emit the domain-suffixed form only when a domain segment is actually
+    // present. Two domain-less cases collapse to the ReferenceWithoutDomain
+    // form (`${proj}-${name}-${env}`):
+    //   - domain-optional mode (never has a domain), and
+    //   - flat mode constructed WITHOUT a domain (else a dangling trailing `-`).
+    // The empty-string check is SCOPED to flat mode so the legacy NESTED path
+    // is byte-unchanged: a nested reference built with an explicit `domain: ''`
+    // keeps its historical `${proj}-${name}-${env}-` output (F4 frozen). Nested
+    // references in practice always carry a non-empty domain.
+    if (this.domainOptional || (this.flat && domain === '')) {
       // Byte-identical to the former ReferenceWithoutDomain.getIdentifier (F4).
       return `${proj}-${name}-${env}`;
     }
@@ -707,7 +747,8 @@ export class CloudInfraReference {
             domain: r.domain,
             type: r.type,
             name: r.key,
-            record: r as ResourceOutput,
+            // Strip addressing so `record` matches the nested `all()` shape.
+            record: CloudInfraReference.stripFlatAddressing(r),
           }));
       });
     }

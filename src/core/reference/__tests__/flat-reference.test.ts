@@ -156,12 +156,64 @@ describe('flat reader mode (Move 4)', () => {
     });
   });
 
+  it('a per-lookup { domain } override wins over the configured domain', () => {
+    // Reference configured for "us" (no records) → override back to "au".
+    const usRef = flatRef('us');
+    expect(usRef.get('my-app', { domain: 'au' }).email).toBe(
+      'my-app@proj.iam.gserviceaccount.com'
+    );
+  });
+
+  it('skips malformed (non-object) array elements during the scan', () => {
+    mockStackRef.getOutput.mockImplementationOnce(() => {
+      const malformed = [
+        'not-an-object',
+        null,
+        {
+          key: 'lonely',
+          type: 'gcp:serviceaccount:Account',
+          domain: 'au',
+          email: 'lonely@proj.iam.gserviceaccount.com',
+        },
+      ];
+      return {
+        apply: (fn: (raw: unknown) => unknown) => {
+          const resolved = fn(malformed);
+          return Array.isArray(resolved)
+            ? resolved
+            : { apply: (cb: (r: unknown) => unknown) => cb(resolved) };
+        },
+      };
+    });
+    expect(flatRef('au').get('lonely').email).toBe(
+      'lonely@proj.iam.gserviceaccount.com'
+    );
+  });
+
+  it('.raw strips inline addressing (key/type/domain) for cross-mode parity', () => {
+    // `.raw` is the (mocked) pulumi.Output thenable; unwrap its single .apply
+    // to inspect the resolved resource object.
+    const rawOutput = flatRef('au').get('my-app').raw as unknown as {
+      apply: (cb: (r: Record<string, unknown>) => unknown) => unknown;
+    };
+    rawOutput.apply(raw => {
+      expect(raw.id).toBe('proj/sa/my-app');
+      expect(raw.email).toBe('my-app@proj.iam.gserviceaccount.com');
+      // Addressing fields must NOT leak into the resolved resource object.
+      expect('key' in raw).toBe(false);
+      expect('type' in raw).toBe(false);
+      expect('domain' in raw).toBe(false);
+      return raw;
+    });
+  });
+
   describe('all()', () => {
     it('returns every flat record with inline domain/type/name addressing', () => {
       const entries = flatRef('au').all() as unknown as Array<{
         domain?: string;
         type?: string;
         name: string;
+        record: Record<string, unknown>;
       }>;
       expect(entries).toHaveLength(3);
       expect(entries).toContainEqual(
@@ -178,6 +230,19 @@ describe('flat reader mode (Move 4)', () => {
           name: 'collision',
         })
       );
+    });
+
+    it('all() record is stripped of addressing (matches nested all() shape)', () => {
+      const entries = flatRef('au').all() as unknown as Array<{
+        name: string;
+        record: Record<string, unknown>;
+      }>;
+      const myApp = entries.find(e => e.name === 'my-app');
+      expect(myApp?.record).toBeDefined();
+      expect('key' in myApp!.record).toBe(false);
+      expect('type' in myApp!.record).toBe(false);
+      expect('domain' in myApp!.record).toBe(false);
+      expect(myApp!.record.id).toBe('proj/sa/my-app');
     });
   });
 
