@@ -103,8 +103,10 @@ export const frontendAuService = new CloudInfraCloudRunService('frontend', {
 
 ## Configuration
 
-Accepts all fields from `gcp.cloudrunv2.ServiceArgs`. If `location` is omitted
-it is resolved via `deriveRegion(meta)`.
+Accepts all fields from `gcp.cloudrunv2.ServiceArgs`. On the name-first surface,
+`location` is naming metadata: it drives both the generated name and the service
+deployment region (via `deriveRegion(meta)`). If omitted, the region is derived
+from `domain`.
 
 A regional **NetworkEndpointGroup** is always created alongside the service; it
 is named identically and parented to the service resource.
@@ -121,6 +123,32 @@ is named identically and parented to the service resource.
 | `getLocation()` / `getRegion()` | `pulumi.Output<string>`                  | Region where the service runs.                      |
 | `getNetworkEndpointGroup()`     | `gcp.compute.RegionNetworkEndpointGroup` | Automatically created NEG.                          |
 | `exportOutputs(manager)`        | –                                        | Records the service under `gcp:cloudrunv2:Service`. |
+
+---
+
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+apiAuService.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the service under `gcp:cloudrunv2:Service`. See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
+
+> **Meta-first (deprecated):** `new CloudInfraCloudRunService(meta, config)` is
+> retained for backward compatibility and produces **identical** resources; the
+> name-first form shown above is preferred. Meta-first also exposes a
+> config-level `location` override (a region different from the naming location).
 
 ---
 
