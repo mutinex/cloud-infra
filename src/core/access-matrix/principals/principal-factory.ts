@@ -28,20 +28,20 @@ import { hasMethod } from '../../helpers';
 const RESOLVERS: ReadonlyArray<{
   type: string;
   resolver: PrincipalResolver<unknown>;
-}> = [
+}> = Object.freeze([
   { type: 'string', resolver: new StringPrincipalResolver() },
   { type: 'output', resolver: new OutputPrincipalResolver() },
   { type: 'matrix-object', resolver: new MatrixObjectPrincipalResolver() },
   { type: 'resource', resolver: new ResourcePrincipalResolver() },
-];
+]);
 
 /**
  * Factory for creating and managing principal resolvers
  */
 export class PrincipalFactory {
   /**
-   * Resolve a principal to its IAM member format and identifier
-   * Uses caching to improve performance for repeated resolutions
+   * Resolve a principal to its IAM member format and identifier.
+   * Resolution is intentionally uncached (see "Disable caching" note below).
    */
   static resolvePrincipal(
     principal: unknown,
