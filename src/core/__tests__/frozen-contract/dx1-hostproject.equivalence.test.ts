@@ -214,10 +214,20 @@ describe('DX1 — name-first HostProject === meta-first (Project + child names +
     for (const r of services) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
     const odd = [...counts.entries()].filter(([, n]) => n % 2 !== 0);
     expect(odd).toEqual([]);
-    // Sanity: the colon-delimited serviceusage child is present.
-    expect(
-      [...counts.keys()].some(n => n.endsWith(':serviceusage-googleapis-com'))
-    ).toBe(true);
+    // Positively pin the expected baseline service SET so a symmetric drop
+    // (both paths missing the same child) is still caught: with no extra
+    // `services` config the host project enables serviceusage + the two
+    // baselineApis (cloudresourcemanager, compute). Assert those three
+    // `:`-delimited suffixes are each present exactly twice (once per path).
+    for (const suffix of [
+      ':serviceusage-googleapis-com',
+      ':cloudresourcemanager-googleapis-com',
+      ':compute-googleapis-com',
+    ]) {
+      const matches = [...counts.entries()].filter(([n]) => n.endsWith(suffix));
+      expect(matches.length).toBe(1);
+      expect(matches[0][1]).toBe(2);
+    }
   });
 
   it('the component + Project + Network URNs are identical (the F2 migration identity)', () => {

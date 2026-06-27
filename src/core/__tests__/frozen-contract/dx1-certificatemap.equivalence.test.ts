@@ -169,6 +169,24 @@ describe('DX1 — name-first CertificateMap === meta-first (child suffix names +
     expect(counts.size).toBeGreaterThan(1);
   });
 
+  it('the sanitized wildcard `star-` map-entry hostname suffix is present and paired', () => {
+    // `wildcard: true` emits a `*.api.example.com` hostname; the sanitizer turns
+    // `*`→`star` and `.`→`-` ⇒ a `...-star-api-example-com` map-entry child.
+    // Direct assertion that the `*`→`star` path is exercised AND identical
+    // across both construction paths.
+    const entries = captured.filter(
+      r =>
+        r.type ===
+        'gcp:certificatemanager/certificateMapEntry:CertificateMapEntry'
+    );
+    const starEntries = entries.filter(r =>
+      r.name.includes('-star-api-example-com')
+    );
+    // One per construction ⇒ exactly two, with identical names.
+    expect(starEntries.length).toBe(2);
+    expect(starEntries[0].name).toBe(starEntries[1].name);
+  });
+
   it('the component URN is identical (the F2 migration identity)', () => {
     expect(nameFirstComponentUrn).toBe(metaFirstComponentUrn);
     expect(nameFirstComponentUrn).toContain(CERTIFICATE_MAP_TYPE);
