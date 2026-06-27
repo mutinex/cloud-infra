@@ -20,19 +20,14 @@ import { CloudInfraMeta, CloudInfraCertificateMap } from '@mutinex/cloud-infra';
 
 ## Usage examples
 
-### 1. Global certificates with certificate map
+### 1. Global certificates with certificate map (name-first, preferred)
 
-Global certificates (domain: 'gl' or omitDomain: true) support certificate maps for use with global load balancers:
+Global certificates (`domain: 'gl'`) support certificate maps for use with
+global load balancers:
 
 ```ts
-const globalCertMeta = new CloudInfraMeta({
-  name: 'global-certs',
-  omitDomain: true, // Creates global resources
-  gcpProject: 'my-project',
-  preview: 'dev',
-});
-
-const globalCert = new CloudInfraCertificateMap(globalCertMeta, {
+const globalCert = new CloudInfraCertificateMap('global-certs', {
+  domain: 'gl', // "gl" → global resources (+ certificate map)
   certificates: [
     {
       name: 'frontend',
@@ -49,7 +44,8 @@ const globalCert = new CloudInfraCertificateMap(globalCertMeta, {
 });
 
 // Use with global ALB certificate map
-const alb = new CloudInfraAlb(albMeta, {
+const alb = new CloudInfraAlb('app', {
+  domain: 'gl',
   portRange: '443',
   target: {
     certificateMap: globalCert.getCertificateMap()!.id,
@@ -60,19 +56,17 @@ const alb = new CloudInfraAlb(albMeta, {
 });
 ```
 
-### 2. Regional certificates
+The single args object splits into naming metadata (`domain` / `location` /
+`prefix` / `naming`) and the certificate config (`certificates`,
+`cloudflareZoneId`, optional `project`), passed straight through.
+
+### 2. Regional certificates (name-first)
 
 Regional certificates are created for specific regions and can be used with both regional and global load balancers:
 
 ```ts
-const regionalCertMeta = new CloudInfraMeta({
-  name: 'regional-certs',
-  domain: 'au', // Creates regional resources in Australia
-  gcpProject: 'my-project',
-  preview: 'dev',
-});
-
-const regionalCert = new CloudInfraCertificateMap(regionalCertMeta, {
+const regionalCert = new CloudInfraCertificateMap('regional-certs', {
+  domain: 'au', // non-"gl" domain → regional resources in Australia
   certificates: [
     {
       name: 'frontend',
@@ -89,7 +83,8 @@ const regionalCert = new CloudInfraCertificateMap(regionalCertMeta, {
 });
 
 // Use with regional ALB
-const regionalAlb = new CloudInfraAlb(albMeta, {
+const regionalAlb = new CloudInfraAlb('app', {
+  domain: 'au',
   portRange: '443',
   network: baseNetwork,
   target: {
@@ -103,17 +98,11 @@ const regionalAlb = new CloudInfraAlb(albMeta, {
 });
 ```
 
-### 3. Multiple certificates with different configurations
+### 3. Multiple certificates with different configurations (name-first)
 
 ```ts
-const multiCertMeta = new CloudInfraMeta({
-  name: 'multi-certs',
-  omitDomain: true,
-  gcpProject: 'my-project',
-  preview: 'prod',
-});
-
-const multiCert = new CloudInfraCertificateMap(multiCertMeta, {
+const multiCert = new CloudInfraCertificateMap('multi-certs', {
+  domain: 'gl',
   certificates: [
     {
       name: 'frontend',
@@ -138,6 +127,51 @@ const multiCert = new CloudInfraCertificateMap(multiCertMeta, {
 const frontendCert = multiCert.getManagedCertificate('frontend');
 const apiCert = multiCert.getManagedCertificate('api');
 ```
+
+### 4. Meta-first construction (deprecated, back-compat)
+
+> **@deprecated** Prefer the name-first form above. Meta-first is retained for
+> backward compatibility and produces **identical** resources. Use it for
+> meta-only concepts such as `gcpProject` (project override) that have no
+> name-first equivalent.
+
+```ts
+const globalCertMeta = new CloudInfraMeta({
+  name: 'global-certs',
+  omitDomain: true, // global resources
+  gcpProject: 'my-project',
+  preview: 'dev',
+});
+
+const globalCert = new CloudInfraCertificateMap(globalCertMeta, {
+  certificates: [
+    { name: 'api', domains: ['api.organization.co'], wildcard: true },
+  ],
+  cloudflareZoneId: 'your-cloudflare-zone-id',
+});
+```
+
+---
+
+## Outputs
+
+The component participates in the v2 output wire via `exportOutputs`:
+
+```ts
+import { CloudInfraOutput } from '@mutinex/cloud-infra';
+
+const out = new CloudInfraOutput();
+globalCert.exportOutputs(out);
+
+export const cloudInfra = out.getFlatOutputs(); // v2 flat wire (recommended)
+export const org = out.getOutputs(); //             legacy nested wire
+```
+
+`exportOutputs` records the certificate map under
+`gcp:certificatemanager:CertificateMap` (global certificates only). See
+[`core/output`](../../core/output) and [`core/reference`](../../core/reference)
+for the full wire format and for consuming these outputs cross-stack via
+`ref.get(...)`.
 
 ---
 
