@@ -3,7 +3,7 @@
 > **This document IS your prompt. Read it top to bottom and adopt it.** It lets a fresh session
 > resume the program with zero loss. The authoritative *technical* record (Frozen Contract,
 > Trap List, validated label map, preview results) is `docs/v2-redesign-notes.md` — read it too.
-> Last updated: 2026-06-27. **Current trunk: branch `v2` @ `0c13459`, 493 tests green.**
+> Last updated: 2026-06-27. **Current trunk: branch `v2` @ `9a70a70`, 493 tests green.**
 >
 > ⚠️ **Where the real work lives:** the program runs on the long-lived **`v2`** branch, NOT
 > `main`. Use the integrator worktree **`/Users/nik.zavgorodny/Dev/cloud-infra-wt-v2trunk`**
@@ -13,21 +13,27 @@
 
 ## 0. START HERE — the immediate next task
 
-The user chose: **finish the access-matrix STRUCTURAL collapse, then stop** (defer DX2 + docs).
+✅ **Access-matrix STRUCTURAL collapse is DONE & merged to `v2` (@ `9a70a70`).** Both chunks landed:
+- (1) `IamBuilderRegistry` + 10 per-type builder classes + `registry-initializer`'s IAM half → ONE
+  `createIamBinding(resourceType, params)` switch in `builders/iam-binding.ts` (11 cases; secret +
+  regionalSecret share a case). `registry-initializer.ts` keeps the LIVE `ResourceRegistry` half
+  (Trap 2); `isInitialized()` now checks ResourceRegistry only. Call site `policy-rule-processor.ts`
+  routes through `createIamBinding`. `index.ts` dropped the `IamBuilderRegistry`/`IamBuilder` exports.
+- (2) `principal-factory.ts` resolver Map/initialize/register → a frozen ordered `RESOLVERS` list
+  (string→output→matrix-object→resource). Trap 1 `deduplicate()` no-op preserved VERBATIM; resolver
+  bodies in `principal-types.ts` untouched; `clear()` now a no-op; public API behavior-identical.
+- **Verified:** 493/493 tests green (incl. golden F1–F4), tsc + build clean, every constructor call
+  cross-checked byte-identical to the deleted builders, and the **real preview gate PASSED** — ZERO
+  IAM replace, ZERO IAM create-renames on all three stacks (dataos/dev, mtx/dev, mtx-org/prd incl.
+  PROD); the only IAM op anywhere was the known-benign `1customer` SA-IAMMember delete in mtx/dev.
+  Net −314 LOC. (Gate detail logged in §9c of `docs/v2-redesign-notes.md`.)
 
-**Task: collapse the access-matrix dispatch indirection** in `src/core/access-matrix/`:
-- `builders/` — the `IamBuilderRegistry` + `registry-initializer` + 10 per-type builder classes are a static dispatch table dressed as an extensibility framework. Collapse to ONE function with a `switch` on the Pulumi type token (~12 cases), each case doing the exact same `new gcp.*IAMMember(resourceName, {...})` call it does today.
-- `principals/principal-factory.ts` — flatten the resolver-registry wrapper into a plain ordered resolver function (the 4 resolver bodies in `principal-types.ts` carry the real logic — keep them).
+**→ The next real milestone is the SHIP decision (§7) — the user's call.** Everything below the line
+remains PREVIEW-ONLY; nothing has been applied. DX2 (single/bulk) and docs/test sprawl stay deferred
+(§7). If resuming with no new user direction: confirm whether to proceed to SHIP, or stop here.
 
-**This is STATE-SENSITIVE — it rewrites the LIVE IAM-creation path.** Unlike everything merged so far, golden F3 alone is NOT sufficient proof. The output (every IAM resource's type token + logical name + creation order) MUST be byte-identical. Hard requirements:
-- **Preserve Trap 1:** the `deduplicate()` no-op in `principal-factory.ts` (`typeof principal === 'string' ? principal : principal`) — do NOT "fix" it (would drop/rename bindings).
-- **Preserve Trap 4:** config→case→rule principal/rule iteration ORDER (feeds `principal-N`/`role-N` fallback names).
-- **Preserve the IAM name formula** `${componentName}:${safeRole}:${principalIdentifier}` + 100-char truncation (golden F3), and the 12 type-token→constructor mappings (currently in `registry-initializer.ts` + each builder's `build()`).
-- **MANDATORY real preview gate before merge** (§6 runbook): the dispatch rewrite must show ZERO IAM replace/delete on dataos/dev + gcp-org mtx/dev + mtx-org/prd. Chunk into small per-commit runs (drop-resilience, see §1).
-
-Suggested chunking: (1) builder registry → switch; (2) principal-factory flatten. Each its own feature-lead worktree off `v2`, golden F3 + full suite green, then the preview gate, then merge.
-
-**After this lands: STOP and hand back.** DX2 (single/bulk) is deferred (state-sensitive, low value). Docs/test sprawl is low-priority. The next real milestone is the SHIP decision (§7) — the user's call.
+The original collapse spec + traps are retained in §5 for audit; the work cycle / merge model below
+(§§1–3, 6) still governs any further structural change.
 
 ### Standing directives from the user (carry these)
 - **You have MERGE AUTHORITY.** "Keep merging everything as long as you are happy." Merge into `v2` on a clean gate WITHOUT asking per-merge; escalate only genuine ambiguity/risk. (This supersedes any "gate every merge with the user" language below.)
@@ -68,7 +74,7 @@ preview gate (needs creds agents lack) and does the merge.
 - **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
   AND committed on `v2`. Keep both updated.
 
-## 4. CURRENT STATE (v2 @ 0c13459, 493 green — all PREVIEW-ONLY, no apply ever run)
+## 4. CURRENT STATE (v2 @ 9a70a70, 493 green — all PREVIEW-ONLY, no apply ever run)
 MERGED & validated:
 - **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
   (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases
@@ -86,10 +92,20 @@ MERGED & validated:
 - **Frozen-Contract golden net** (`src/core/__tests__/frozen-contract/`): F1 names (all 5 formulas
   + zonal), F2 aliases + 12 ALB tokens, F3 IAM-name formula + 100-truncation, F4 getIdentifier.
   This is the regression guard — it MUST stay green.
+- **Access-matrix dispatch collapse (DONE, §0)** — `IamBuilderRegistry`+10 builders+`registry-initializer`
+  IAM half → single `createIamBinding` switch (`builders/iam-binding.ts`); `principal-factory` resolver
+  Map → frozen ordered list. ResourceRegistry (Trap 2) + Trap 1 dedup no-op preserved. Real preview
+  gate PASSED zero-replace on all 3 stacks; net −314 LOC.
 
-## 5. ACCESS-MATRIX COLLAPSE — see §0 (this is the active task)
-(Design + hard requirements are in §0. The `naming.ts` name-first foundation, `childOpts`/
-`nestedChildOpts`/`withLabels` base, and the golden net are all already on `v2`.)
+## 5. ACCESS-MATRIX COLLAPSE — DONE (retained for audit)
+**Completed & merged** — see §0 for the landed result and §6 runbook for the gate that proved it.
+Original spec (now satisfied): collapse the `IamBuilderRegistry` + `registry-initializer` IAM half +
+10 per-type builders to ONE `switch` function on the Pulumi type token, each case doing the same
+`new gcp.*IAMMember(resourceName, {...})`; flatten `principal-factory.ts`'s resolver-registry to a
+plain ordered resolver. Hard requirements that were honored: Trap 1 `deduplicate()` identity no-op
+kept verbatim; Trap 4 iteration order; IAM name formula `${componentName}:${safeRole}:${principalIdentifier}`
++ 100-char truncation (golden F3); ResourceRegistry (Trap 2) left LIVE & untouched; byte-identical
+output proven via the mandatory zero-replace preview gate.
 
 ## 6. PREVIEW-GATE RUNBOOK (Tech Lead runs this; read-only)
 1. Snapshot+build the candidate: `git -C /Users/nik.zavgorodny/Dev/cloud-infra worktree add --detach <path> <branch-or-v2>` ; `yarn install` + `yarn build` (confirm `dist/`). (Use `--detach` if the branch is checked out elsewhere.)

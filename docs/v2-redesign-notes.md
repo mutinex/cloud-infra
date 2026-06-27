@@ -282,6 +282,24 @@ Added 8 tokens to `LABEL_UNSUPPORTED_TYPES`: `gcp:projects/service:Service`,
 EVERY label-less transitive descendant (incl. dynamic providers). Access-matrix discovery needed
 no extension (getters align 1:1; verified for Project/Folder/Repository/Subnetwork).
 
+### 9d. ACCESS-MATRIX DISPATCH COLLAPSE validation — all 3 stacks (2026-06-27, v2 @ `9a70a70`)
+
+Gated the access-matrix dispatch rewrite (single `createIamBinding` switch + flattened
+`principal-factory` resolver list) against the same three stacks via the §6 runbook (consumers
+repointed to the combined candidate worktree, `NODE_OPTIONS` preview --diff). **PASS — byte-identical
+IAM output confirmed:**
+- **mtx/dev**: 0 IAM replace, 0 IAM create-rename. The sole IAM op was the known pre-existing
+  `1customer` SA-IAMMember delete (same v1 config drift as §9c, NOT this change). Summary `+17 ~7 -1`.
+- **mtx-org/prd** (PROD): `+25 ~5`, ZERO delete, ZERO replace.
+- **dataos/dev**: `+22 ~22`, ZERO delete, ZERO replace.
+- Across all three, the ONLY `*IAMMember` resource-operation line was that one known delete → every
+  access-matrix-generated binding sits in `unchanged`, i.e. no logical-name change from the rewrite.
+  Remaining `~`/`-` lines are benign gcp 8.36→8.41 label drift, not resource churn.
+
+Proof chain beyond the gate: 493/493 tests green (golden F1–F4 incl. F3 IAM-name + dedup no-op), tsc +
+build clean, and a manual cross-check that all 11 `new gcp.*IAMMember(...)` constructor calls in
+`iam-binding.ts` are verbatim transcriptions of the deleted per-type builders. Net −314 LOC.
+
 ### Rollout caveats (carry forward)
 - **Provider drift interleaves with migration diffs.** Previews ran on gcp 8.41 vs deployed 8.36 —
   benign in-place updates (`configuredCapabilities: null`, extra custom-role permissions) appear
