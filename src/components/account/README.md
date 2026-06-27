@@ -12,9 +12,9 @@ This package provides two thin wrappers around
 | `CloudInfraBulkAccount` | Manage a **set** of service-accounts derived from a single `Meta`. |
 
 Both components use [`CloudInfraMeta`](../../core/meta) naming conventions to
-calculate predictable, policy-compliant names and locations. `CloudInfraAccount`
-takes a name string directly, while `CloudInfraBulkAccount` accepts a
-`CloudInfraMeta` instance. They add zero
+calculate predictable, policy-compliant names and locations. Both take a name
+(or array of names) string-first; `CloudInfraAccount` takes a single name and
+`CloudInfraBulkAccount` takes a `string[]`. They add zero
 runtime logic on top of the underlying Pulumi resource – the goal is to reduce
 boilerplate, not to hide functionality.
 
@@ -28,8 +28,8 @@ import {
 } from '@mutinex/cloud-infra';
 ```
 
-- **Constructor (single):** `new CloudInfraAccount(name, config?)`
-- **Constructor (bulk):** `new CloudInfraBulkAccount(meta, config?)`
+- **Constructor (single):** `new CloudInfraAccount(name, { domain, location?, prefix?, naming?, ...config })`
+- **Constructor (bulk):** `new CloudInfraBulkAccount(names, { domain, location?, prefix?, naming?, custom?, ...config })`
 - **Direct access (both):** `account.emails[name]`, `account.members[name]`, etc.
 - **Consistent API:** Single and bulk accounts use the same access pattern!
 - **Record outputs:** `account.exportOutputs(outputManager)`
@@ -48,12 +48,12 @@ with an optional `custom` map for the bulk component. Example fields include `de
 
 ```ts
 // Single Account - Direct access by actual name
-const apiAccount = new CloudInfraAccount(apiMeta); // meta has name: 'api'
+const apiAccount = new CloudInfraAccount('api', { domain: 'au' });
 export const apiEmail = apiAccount.emails.api;
 export const apiMember = apiAccount.members.api;
 
 // Bulk Accounts - Direct access by name
-const accounts = new CloudInfraBulkAccount(meta);
+const accounts = new CloudInfraBulkAccount(['frontend', 'api'], { domain: 'au' });
 export const frontendEmail = accounts.emails.frontend;
 export const apiServiceAccount = accounts.serviceAccounts.api;
 export const apiIamMember = accounts.members.api;
@@ -91,42 +91,34 @@ export const schedulerAccount = new CloudInfraAccount('scheduler', {
 ### 3. GitHub Actions service accounts (real production pattern)
 
 ```ts
-const ghaAccountsMeta = new CloudInfraMeta({
-  name: [`org-${pulumi.getStack()}-gha`],
-  omitPrefix: true,
-  omitDomain: true,
-  gcpProject: baseProject.getProjectId(), // Optional project override
-});
-
-export const ghaAccounts = new CloudInfraBulkAccount(ghaAccountsMeta, {
-  custom: {
-    [`org-prd-gha`]: {
-      description: 'GitHub Actions Service Account for Shared Project',
+export const ghaAccounts = new CloudInfraBulkAccount(
+  [`org-${pulumi.getStack()}-gha`],
+  {
+    naming: 'literal', // omit prefix + location → name is used verbatim
+    project: baseProject.getProjectId(), // optional project override (maps to meta's gcpProject)
+    custom: {
+      [`org-prd-gha`]: {
+        description: 'GitHub Actions Service Account for Shared Project',
+      },
     },
-  },
-});
+  }
+);
 ```
 
 ### 4. Multi-region service accounts
 
 ```ts
 // Australia region accounts
-export const saAu = new CloudInfraBulkAccount(
-  new CloudInfraMeta({
-    name: ['api', 'frontend'],
-    domain: 'au',
-    gcpProject: gcpProjectId, // Optional project override
-  })
-);
+export const saAu = new CloudInfraBulkAccount(['api', 'frontend'], {
+  domain: 'au',
+  project: gcpProjectId, // optional project override (maps to meta's gcpProject)
+});
 
 // US region accounts
-export const saUs = new CloudInfraBulkAccount(
-  new CloudInfraMeta({
-    name: ['frontend'],
-    domain: 'us',
-    gcpProject: gcpProjectId, // Optional project override
-  })
-);
+export const saUs = new CloudInfraBulkAccount(['frontend'], {
+  domain: 'us',
+  project: gcpProjectId, // optional project override (maps to meta's gcpProject)
+});
 
 // Using new direct property access
 export const apiEmailAu = saAu.emails.api;
@@ -137,16 +129,19 @@ export const frontendMemberUs = saUs.members.frontend;
 
 > **@deprecated** Meta-first construction (`new CloudInfraAccount(meta, config)`)
 > is retained for backward compatibility and produces **identical** resources;
-> the name-first form (examples 1–2) is preferred. Meta-first remains the path
-> for meta-only concepts — `gcpProject`, `omitPrefix`/`omitDomain` and
-> `overrideNamingRules` — which have no name-first equivalent.
+> the name-first form is preferred for everything else. Most former meta-only
+> concepts now have a name-first equivalent — `gcpProject` → the `project:`
+> config field, and `omitPrefix`/`omitDomain` → `naming: 'no-prefix'` /
+> `'no-location'` / `'literal'`. The one remaining meta-only flag is
+> `overrideNamingRules` (a `CloudInfraMeta` schema field with no config
+> equivalent), so this single demo stays meta-first.
 
 ```ts
 // When you need to use names that violate GCP's strict naming rules
 const specialAccountMeta = new CloudInfraMeta({
   name: 'very-long-service-account-name-that-exceeds-normal-limits',
   domain: 'gl',
-  overrideNamingRules: true, // ⚠️ Use with caution!
+  overrideNamingRules: true, // ⚠️ meta-only — no name-first equivalent
 });
 
 export const specialAccount = new CloudInfraAccount(specialAccountMeta, {
@@ -157,16 +152,11 @@ export const specialAccount = new CloudInfraAccount(specialAccountMeta, {
 ### 6. Organization-level accounts with custom descriptions
 
 ```ts
-const organizationGhaAccountsMeta = new CloudInfraMeta({
-  name: ['provisioner', 'viewer'],
-  omitPrefix: true,
-  omitDomain: true,
-  gcpProject: baseProject.getProjectId(), // Optional project override
-});
-
 export const organizationGhaAccounts = new CloudInfraBulkAccount(
-  organizationGhaAccountsMeta,
+  ['provisioner', 'viewer'],
   {
+    naming: 'literal', // omit prefix + location → names used verbatim
+    project: baseProject.getProjectId(), // optional project override (maps to meta's gcpProject)
     custom: {
       provisioner: {
         description:
