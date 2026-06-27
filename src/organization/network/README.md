@@ -94,7 +94,6 @@ The following examples are based on actual production infrastructure patterns:
 ```ts
 import * as pulumi from '@pulumi/pulumi';
 import {
-  CloudInfraMeta,
   CloudInfraSubnet,
   CloudInfraConnector,
   CloudInfraPSA,
@@ -120,21 +119,20 @@ export const psa = new CloudInfraPSA('psa', {
   ],
 });
 
-// Australia Southeast 1 VPC Connector
-const vconAuSe1Meta = new CloudInfraMeta({
-  name: 'vcon',
+// Australia Southeast 1 VPC Connector (omitPrefix → naming: 'no-prefix')
+export const vconSubnetAuSe1 = new CloudInfraSubnet('vcon', {
   domain: 'au',
-  omitPrefix: true,
+  naming: 'no-prefix',
   location: 'australia-southeast1',
-});
-
-export const vconSubnetAuSe1 = new CloudInfraSubnet(vconAuSe1Meta, {
   project: baseProject.getProjectId(),
   network: baseProject.getSharedVpcName(),
   ipCidrRange: subnet['vconAuSe1'],
 });
 
-export const vconAuSe1 = new CloudInfraConnector(vconAuSe1Meta, {
+export const vconAuSe1 = new CloudInfraConnector('vcon', {
+  domain: 'au',
+  naming: 'no-prefix',
+  location: 'australia-southeast1',
   project: baseProject.getProjectId(),
   subnet: {
     name: vconSubnetAuSe1.getName(),
@@ -142,21 +140,20 @@ export const vconAuSe1 = new CloudInfraConnector(vconAuSe1Meta, {
   },
 });
 
-// US Central 1 VPC Connector
-const vconUsC1Meta = new CloudInfraMeta({
-  name: 'vcon',
+// US Central 1 VPC Connector (omitPrefix → naming: 'no-prefix')
+export const vconSubnetUsC1 = new CloudInfraSubnet('vcon', {
   domain: 'us',
-  omitPrefix: true,
+  naming: 'no-prefix',
   location: 'us-central1',
-});
-
-export const vconSubnetUsC1 = new CloudInfraSubnet(vconUsC1Meta, {
   project: baseProject.getProjectId(),
   network: baseProject.getSharedVpcName(),
   ipCidrRange: subnet['vconUsC1'],
 });
 
-export const vconUsC1 = new CloudInfraConnector(vconUsC1Meta, {
+export const vconUsC1 = new CloudInfraConnector('vcon', {
+  domain: 'us',
+  naming: 'no-prefix',
+  location: 'us-central1',
   project: baseProject.getProjectId(),
   subnet: {
     name: vconSubnetUsC1.getName(),
