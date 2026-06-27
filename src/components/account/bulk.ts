@@ -10,6 +10,7 @@ import {
   CloudInfraAccountConfig,
   CloudInfraAccountBase,
 } from './common';
+import { resolveMeta, type NamingArgs } from '../../core/component';
 
 /**
  * Manages a *set* of Google Cloud Service-Accounts whose names are derived from
@@ -44,6 +45,25 @@ import {
 /** Pulumi type token for the bulk service-account component. */
 export const BULK_ACCOUNT_TYPE = 'cloud-infra:account:CloudInfraBulkAccount';
 
+/**
+ * Name-first construction args for `CloudInfraBulkAccount` (v2 DX, DX2 bulk).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the common account config
+ * ({@link CloudInfraAccountConfig}) and the per-item `custom` overrides into a
+ * single args object, so a bulk account set can be built as
+ * `new CloudInfraBulkAccount(["primary", "global"], { description: "...", custom: { global: { description: "..." } } })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` via the
+ * `resolveMeta(names, ...)` overload (identical `getNames()` output, Frozen
+ * Contract F1); the remaining fields (common config + `custom`) are passed
+ * straight through to the EXACT existing bulk construction.
+ */
+export type CloudInfraBulkAccountArgs = NamingArgs &
+  CloudInfraAccountConfig & {
+    custom?: Record<string, CloudInfraAccountConfig>;
+  };
+
 export class CloudInfraBulkAccount extends CloudInfraAccountBase {
   private meta: CloudInfraMeta;
   private accounts: Record<string, gcp.serviceaccount.Account> = {};
@@ -51,6 +71,21 @@ export class CloudInfraBulkAccount extends CloudInfraAccountBase {
   private iamMembers: Record<string, gcp.serviceaccount.IAMMember[]> = {};
 
   /**
+   * Name-first construction (v2 DX, preferred). The multi-name array plus the
+   * naming metadata (`domain` / `location` / `prefix` / `naming`), common
+   * account config and per-item `custom` overrides are folded into a single args
+   * object; the names are resolved into a `CloudInfraMeta` internally with
+   * byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    names: string[],
+    args?: CloudInfraBulkAccountArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraBulkAccount(names, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
    * @param meta - Provides the list of account names and naming conventions.
    * @param config - Common and per-account overrides. See README for the
    *                        full schema.
@@ -61,7 +96,35 @@ export class CloudInfraBulkAccount extends CloudInfraAccountBase {
       custom?: Record<string, CloudInfraAccountConfig>;
     },
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    namesOrMeta: string[] | CloudInfraMeta,
+    argsOrConfig: CloudInfraBulkAccountArgs | (CloudInfraAccountConfig & {
+      custom?: Record<string, CloudInfraAccountConfig>;
+    }) = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else (common
+    // config + per-item `custom`) is the bulk config passed straight through.
+    let meta: CloudInfraMeta;
+    let config:
+      | (CloudInfraAccountConfig & {
+          custom?: Record<string, CloudInfraAccountConfig>;
+        })
+      | undefined;
+    if (Array.isArray(namesOrMeta)) {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraBulkAccountArgs;
+      meta = resolveMeta(namesOrMeta, { domain, location, prefix, naming });
+      config = rest;
+    } else {
+      meta = namesOrMeta;
+      config = argsOrConfig as CloudInfraAccountConfig & {
+        custom?: Record<string, CloudInfraAccountConfig>;
+      };
+    }
+
     // BulkAccount wraps MANY service accounts, so there is no single primary
     // generated name to use as the component node label. Use a STABLE label
     // derived from the (order-preserving) input names. Each child SA below

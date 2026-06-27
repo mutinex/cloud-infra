@@ -9,10 +9,33 @@ import {
   GcpDualRegions,
 } from '../../core/meta/locations';
 import { CloudInfraBucketConfig } from './common';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  resolveMeta,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the bulk-bucket component. */
 export const BULK_BUCKET_TYPE = 'cloud-infra:bucket:BulkBucket';
+
+/**
+ * Name-first construction args for `CloudInfraBulkBucket` (v2 DX, DX2 bulk).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the common bucket config
+ * ({@link CloudInfraBucketConfig}) and the per-item `custom` overrides into a
+ * single args object, so a bulk bucket can be built as
+ * `new CloudInfraBulkBucket(["assets", "logs"], { domain: "au", custom: { logs: { forceDestroy: true } } })`.
+ *
+ * The naming fields are resolved into a `CloudInfraMeta` via the
+ * `resolveMeta(names, ...)` overload (identical `getNames()` output, Frozen
+ * Contract F1); the remaining fields (common config + `custom`) are passed
+ * straight through to the EXACT existing bulk construction.
+ */
+export type CloudInfraBulkBucketArgs = NamingArgs &
+  CloudInfraBucketConfig & {
+    custom?: Record<string, CloudInfraBucketConfig>;
+  };
 
 /**
  * Creates a *set* of Storage buckets derived from a single
@@ -27,11 +50,48 @@ export class CloudInfraBulkBucket extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly buckets: Record<string, gcp.storage.Bucket> = {};
 
+  /**
+   * Name-first construction (v2 DX, preferred). The multi-name array plus the
+   * naming metadata (`domain` / `location` / `prefix` / `naming`), common bucket
+   * config and per-item `custom` overrides are folded into a single args object;
+   * the names are resolved into a `CloudInfraMeta` internally with byte-identical
+   * naming (Frozen Contract F1).
+   */
+  constructor(
+    names: string[],
+    args?: CloudInfraBulkBucketArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraBulkBucket(names, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: Record<string, unknown> = {},
+    cloudInfraConfig?: Record<string, unknown>,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    namesOrMeta: string[] | CloudInfraMeta,
+    argsOrConfig: CloudInfraBulkBucketArgs | Record<string, unknown> = {},
     opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else (common
+    // config + per-item `custom`) is the bulk config passed straight through.
+    let meta: CloudInfraMeta;
+    let cloudInfraConfig: Record<string, unknown>;
+    if (Array.isArray(namesOrMeta)) {
+      const { domain, location, prefix, naming, ...rest } =
+        argsOrConfig as CloudInfraBulkBucketArgs;
+      meta = resolveMeta(namesOrMeta, { domain, location, prefix, naming });
+      cloudInfraConfig = rest;
+    } else {
+      meta = namesOrMeta;
+      cloudInfraConfig = argsOrConfig as Record<string, unknown>;
+    }
+
     const names = meta.getNames();
 
     // Bulk components have no single resource name; use a STABLE component
