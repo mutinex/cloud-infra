@@ -186,6 +186,14 @@ describe('CloudInfraOutput.getFlatOutputs() — flat keyed map', () => {
     ).toThrow(/Flat-output key collision: 'au\.sa\.dup\.id'/);
   });
 
+  it('THROWS on a grouping key containing the separator (would corrupt the positional parse)', () => {
+    const mgr = new CloudInfraOutput();
+    const sa = { id: out('id') } as unknown as OutputResource;
+    expect(() =>
+      mgr.record('gcp:serviceaccount:Account', 'my.app', metaFor('au'), sa)
+    ).toThrow(/must not contain the key separator/);
+  });
+
   it('coerces a numeric Output (e.g. project number) to a string Output', () => {
     const mgr = new CloudInfraOutput();
     const project = {

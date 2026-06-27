@@ -119,15 +119,17 @@ export interface ReferenceOptions {
   outputKey?: string;
 
   /**
-   * When `true`, resolve against the NEW flat, self-describing emission
-   * (`CloudInfraOutput.getFlatOutputs()` → a `FlatOutputRecord[]`) instead of
-   * the legacy nested `root[domain][type][name]` wire. This is the Move 4 flat
-   * reader: records are matched by `key`, with optional `{ type, domain }`
-   * disambiguators (cross-record scan semantics mirror the nested cross-type
-   * scan). The `outputKey` still selects which stack output array to read.
+   * When `true`, resolve against the flat KEYED MAP emitted by
+   * `CloudInfraOutput.getFlatOutputs()` (`Record<key, string>`, keyed
+   * `<domain>.<service>[.<region>].<name>.<field>`) instead of the legacy
+   * nested `root[domain][type][name]` wire. The reader re-assembles a record by
+   * grouping keys that share a `<domain>.<service>[.<region>].<name>` prefix,
+   * then matches by `name` with optional `{ type, domain }` disambiguators
+   * (cross-record scan semantics mirror the nested cross-type scan). The
+   * `outputKey` selects which stack output (the nested map) to read.
    *
-   * Mutually distinct from domain-optional mode (which reads flat `root[name]`
-   * STRINGS); flat mode reads an ARRAY of structured records.
+   * Mutually distinct from domain-optional mode (which reads flat top-level
+   * `root[name]` STRINGS by bare name); flat mode reads a grammar-keyed map.
    * @default false
    */
   flat?: boolean;

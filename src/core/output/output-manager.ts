@@ -290,6 +290,30 @@ export class CloudInfraOutput {
     const regionSegment = hasLocation ? deriveRegionSegment(meta) : undefined;
 
     const sep = FLAT_KEY_SEPARATOR;
+
+    // HARD INVARIANT: the key grammar is positional and the consumer
+    // (`CloudInfraReference.groupFlatMap`) parses segments by count — so NO
+    // addressing segment may itself contain the separator, or the round-trip
+    // silently corrupts (a dotted name would shift the region/name split).
+    // Reject it here, at the producer, with a clear message rather than emitting
+    // an un-parseable key. `domain` (au/us/gl) and `service` (alias `[a-z0-9]+`)
+    // are already separator-free by construction; `groupingKey` is user-supplied
+    // and `regionSegment` is defensive.
+    for (const [segName, segValue] of [
+      ['domain', domain],
+      ['service', service],
+      ['region', regionSegment],
+      ['name (grouping key)', groupingKey],
+    ] as const) {
+      if (segValue !== undefined && segValue.includes(sep)) {
+        throw new Error(
+          `Invalid flat-output ${segName} segment '${segValue}': it must not ` +
+            `contain the key separator '${sep}'. The flat-output key grammar ` +
+            `'<domain>.<service>[.<region>].<name>.<field>' is positional, so a ` +
+            `separator inside a segment would corrupt the consumer's parse.`
+        );
+      }
+    }
     const prefix =
       regionSegment !== undefined
         ? `${domain}${sep}${service}${sep}${regionSegment}${sep}${groupingKey}`

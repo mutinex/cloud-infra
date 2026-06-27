@@ -79,12 +79,14 @@ export class CloudInfraReference {
   private readonly domainOptional: boolean;
 
   /**
-   * When `true`, this reference resolves against the NEW flat, self-describing
-   * emission (`CloudInfraOutput.getFlatOutputs()` → a `FlatOutputRecord[]`)
-   * instead of the nested `root[domain][type][name]` wire. Set via the `flat`
-   * option. Independent of {@link domainOptional} (which reads flat STRINGS,
-   * not the structured record ARRAY). When flat mode is on, `domainOptional`
-   * is forced off so a `domain` may still scope/disambiguate flat records.
+   * When `true`, this reference resolves against the flat KEYED MAP emitted by
+   * `CloudInfraOutput.getFlatOutputs()` (`Record<key, string>`, keyed
+   * `<domain>.<service>[.<region>].<name>.<field>`) instead of the nested
+   * `root[domain][type][name]` wire. Set via the `flat` option. The reader
+   * re-assembles a record by grouping keys that share a prefix. Independent of
+   * {@link domainOptional} (which reads flat top-level STRINGS by name, not the
+   * grammar-keyed map). When flat mode is on, `domainOptional` is forced off so
+   * a `domain` may still scope/disambiguate flat records.
    * @private
    */
   private readonly flat: boolean;

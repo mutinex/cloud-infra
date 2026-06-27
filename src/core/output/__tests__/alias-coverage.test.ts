@@ -17,6 +17,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   serviceAliasMap,
+  resourceTypeMap,
+  getServiceAlias,
   deriveServiceAliasFallback,
 } from '../../reference/config';
 
@@ -97,5 +99,23 @@ describe('flat-output service alias coverage', () => {
     expect(deriveServiceAliasFallback('gcp:foo:BarBaz')).toBe('barbaz');
     expect(deriveServiceAliasFallback('gcp:x:Y')).toBe('y');
     expect(deriveServiceAliasFallback('nocolon')).toBe('nocolon');
+  });
+
+  it('the two alias tables are consistent: every resourceTypeMap alias resolves to the SAME service segment as its full type', () => {
+    // The consumer's flat `{ type }` disambiguator resolves a short alias
+    // through `resourceTypeMap` (alias → full type) and then `getServiceAlias`
+    // (full type → service segment). Pin that this round-trip agrees with
+    // resolving the alias string directly, so the producer's key segment and the
+    // consumer's filter can never silently diverge for any mapped alias.
+    for (const [alias, fullType] of Object.entries(resourceTypeMap)) {
+      const viaFullType = getServiceAlias(fullType);
+      const viaAliasString = getServiceAlias(
+        resourceTypeMap[alias.toLowerCase()] ?? alias
+      );
+      expect(
+        viaAliasString,
+        `alias '${alias}' (→ ${fullType}) must resolve to service '${viaFullType}'`
+      ).toBe(viaFullType);
+    }
   });
 });

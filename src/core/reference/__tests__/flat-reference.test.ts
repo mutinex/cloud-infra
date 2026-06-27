@@ -45,6 +45,10 @@ const FLAT_WIRE: Record<string, string> = {
   'au.sa.collision.email': 'collision@proj.iam.gserviceaccount.com',
   'au.bucket.au-se1.collision.id': 'bucket-collision-id',
   'au.bucket.au-se1.collision.name': 'collision-bucket',
+  // A flat-only service (`run`) whose alias has NO reverse entry in
+  // resourceTypeMap under that exact token — exercises the full-type path.
+  'us.run.us-c1.api.id': 'run-api-id',
+  'us.run.us-c1.api.uri': 'https://api-abc.run.app',
 };
 
 describe('flat reader mode (keyed map)', () => {
@@ -112,6 +116,17 @@ describe('flat reader mode (keyed map)', () => {
     expect(
       ref.get('collision', { type: 'gcp:storage:Bucket' }).id
     ).toBe('bucket-collision-id');
+  });
+
+  it('{ type } disambiguation works for a flat-only service (full Pulumi type)', () => {
+    const ref = flatRef('us');
+    // Full Pulumi type → service segment "run".
+    expect(ref.get('api', { type: 'gcp:cloudrunv2:Service' }).id).toBe(
+      'run-api-id'
+    );
+    expect(ref.get('api', { type: 'gcp:cloudrunv2:Service' }).raw).toBeDefined();
+    // The `cloudrun` short alias (resourceTypeMap) also resolves to "run".
+    expect(ref.get('api', { type: 'cloudrun' }).id).toBe('run-api-id');
   });
 
   it('throws not-found when the key matches no record', () => {
@@ -198,8 +213,8 @@ describe('flat reader mode (keyed map)', () => {
         name: string;
         record: Record<string, unknown>;
       }>;
-      // my-app (sa) + collision (sa) + collision (bucket) = 3 groups.
-      expect(entries).toHaveLength(3);
+      // my-app (sa) + collision (sa) + collision (bucket) + api (run) = 4 groups.
+      expect(entries).toHaveLength(4);
       expect(entries).toContainEqual(
         expect.objectContaining({
           domain: 'au',
