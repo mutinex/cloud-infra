@@ -83,12 +83,18 @@ export const environmentTags = new CloudInfraTag(environmentTagsMeta, {
 
 ```ts
 import {
+  CloudInfraMeta,
   CloudInfraFolder,
   CloudInfraServiceProject,
 } from '@mutinex/cloud-infra';
 
 // Apply environment tag to a folder
-const productionFolder = new CloudInfraFolder('production', {
+const folderMeta = new CloudInfraMeta({
+  name: 'production',
+  omitDomain: true,
+});
+
+const productionFolder = new CloudInfraFolder(folderMeta, {
   cloudInfraTags: [environmentTags.getTagValue('prd')],
 });
 
@@ -175,7 +181,8 @@ const outputManager = new CloudInfraOutput();
 environmentTags.exportOutputs(outputManager);
 
 // Use tag values in other resources
-const folder = new CloudInfraFolder('production', {
+const folderMeta = new CloudInfraMeta({ name: 'production', omitDomain: true });
+const folder = new CloudInfraFolder(folderMeta, {
   cloudInfraTags: ['tagValues/1234567890'], // Reference to tag value ID
 });
 ```
@@ -190,7 +197,8 @@ To use tag values created by `CloudInfraTag`, you need to reference them by thei
 // Tag values are created as: tagValues/{generated-id}
 // You can reference them in other components that accept cloudInfraTags
 
-const folder = new CloudInfraFolder('production', {
+const folderMeta = new CloudInfraMeta({ name: 'production', omitDomain: true });
+const folder = new CloudInfraFolder(folderMeta, {
   cloudInfraTags: [
     // Reference tag values by their resource IDs
     environmentTags.getTagValue('prd'), // If this method exists
