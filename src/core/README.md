@@ -29,27 +29,31 @@ The `cloud-infra/core` directory contains the foundational modules that power th
 
 ### Configuration Setup
 
-Initialize the library configuration at your application startup:
+Organisation/GCP and reference values are read lazily from the stack's Pulumi
+config under the `cloudInfra` namespace. Set them once per stack:
+
+```bash
+pulumi config set cloudInfra:organizationId   "123456789012"
+pulumi config set cloudInfra:billingAccountId "ABCDEF-123456-789ABC"
+pulumi config set cloudInfra:organizationName "my-org"
+pulumi config set cloudInfra:defaultOutputKey "cloudInfra"
+```
 
 ```typescript
-import { Config } from '@mutinex/cloud-infra';
+import { gcpConfig } from '@mutinex/cloud-infra';
 
-// Initialize once at app startup
-Config.init({
-  gcp: {
-    organizationId: '123456789012',
-    billingAccountId: 'ABCDEF-123456-789ABC',
-    defaultProjectId: 'my-project',
-  },
-  accessMatrix: {
-    enableDetailedLogging: true,
-    maxResourceNameLength: 80,
-  },
-});
+// Lazy getters backed by the live Pulumi config.
+const orgId = gcpConfig.organizationId;
+```
 
-// Use anywhere in your application
-const config = Config.get();
-const orgId = config.gcp.organizationId;
+Library tuning constants (access-matrix limits, naming lengths) are fixed,
+exported `as const` objects — there is no runtime reconfiguration:
+
+```typescript
+import { accessMatrixConfig, resourceNamingConfig } from '@mutinex/cloud-infra';
+
+accessMatrixConfig.maxResourceNameLength; // 100 (frozen)
+resourceNamingConfig.certificateMaxLength; // 32
 ```
 
 ### Logging Usage
@@ -415,14 +419,12 @@ The access-matrix currently supports these GCP resource types:
 
 ## 🏗️ Architecture Principles
 
-### Configuration Priority Chain
+### Configuration Model
 
-Configuration values are resolved in this order (highest to lowest priority):
-
-1. **External Configuration** (via `Config.init()`)
-2. **Pulumi Configuration** (stack config files)
-3. **Environment Variables**
-4. **Default Values**
+- **Org/GCP/reference values** (`gcpConfig`, `referenceConfig`) are read lazily
+  from the stack's Pulumi config under the `cloudInfra` namespace.
+- **Tuning constants** (`accessMatrixConfig`, `resourceNamingConfig`) are fixed,
+  exported `as const` objects — compile-time constants, not runtime-tunable.
 
 ### Error Handling Strategy
 
@@ -446,10 +448,10 @@ const ENABLE_LOGGING = true;
 **After:**
 
 ```typescript
-const config = Config.get();
-const maxRetry = config.component.maxRetries;
-const timeout = config.component.timeout;
-const enableLogging = config.component.enableLogging;
+import { accessMatrixConfig } from '@mutinex/cloud-infra';
+
+const timeout = accessMatrixConfig.defaultOperationTimeout;
+const enableLogging = accessMatrixConfig.enableDetailedLogging;
 ```
 
 ### From pulumi.log.\*
@@ -495,7 +497,7 @@ throw new ValidationError(
 
 When integrating with core systems, ensure:
 
-- [ ] **Configuration**: Use `Config.get()` instead of hard-coded values
+- [ ] **Configuration**: Use the exported config objects (`gcpConfig`, `accessMatrixConfig`, `resourceNamingConfig`) instead of hard-coded values
 - [ ] **Logging**: Replace `pulumi.log.*` with `CloudInfraLogger`
 - [ ] **Errors**: Use typed errors with component context
 - [ ] **Validation**: Use centralized validation functions

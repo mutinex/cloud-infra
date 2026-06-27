@@ -66,6 +66,7 @@ import {
   CloudInfraCertificateMap,
   CERTIFICATE_MAP_TYPE,
 } from '../../../components/certificatemap';
+import { resourceNamingConfig } from '../../../config';
 
 const T_CERTIFICATE = 'gcp:certificatemanager/certificate:Certificate';
 const T_DNS_AUTH =
@@ -190,5 +191,13 @@ describe('DX1 — name-first CertificateMap === meta-first (child suffix names +
   it('the component URN is identical (the F2 migration identity)', () => {
     expect(nameFirstComponentUrn).toBe(metaFirstComponentUrn);
     expect(nameFirstComponentUrn).toContain(CERTIFICATE_MAP_TYPE);
+  });
+});
+
+describe('certificatemap — frozen sanitisation length', () => {
+  // `sanitizeResourceName` truncates child names to this length; a drift would
+  // rename (replace) certificate-map children. Frozen at 32.
+  it('certificateMaxLength is the frozen 32', () => {
+    expect(resourceNamingConfig.certificateMaxLength).toBe(32);
   });
 });
