@@ -13,38 +13,32 @@ import { AllPrincipalTypes, BulkResource } from '../types/matrix-types';
 import { hasMethod } from '../../helpers';
 
 /**
+ * Fixed, ordered list of principal resolvers tried in sequence.
+ *
+ * ORDER IS LOAD-BEARING — string → output → matrix-object → resource.
+ * `findResolver` returns the FIRST resolver whose `canResolve` matches; for an
+ * ambiguous principal the winning resolver decides the emitted `member` /
+ * `identifier`, i.e. the IAM binding name. Reordering this list silently
+ * renames/replaces production IAM bindings. Do NOT reorder.
+ *
+ * Each entry pairs the resolver with its stable type key (the keys formerly
+ * registered in the Map: `string`, `output`, `matrix-object`, `resource`),
+ * which `getRegisteredTypes()` returns for callers/tests.
+ */
+const RESOLVERS: ReadonlyArray<{
+  type: string;
+  resolver: PrincipalResolver<unknown>;
+}> = [
+  { type: 'string', resolver: new StringPrincipalResolver() },
+  { type: 'output', resolver: new OutputPrincipalResolver() },
+  { type: 'matrix-object', resolver: new MatrixObjectPrincipalResolver() },
+  { type: 'resource', resolver: new ResourcePrincipalResolver() },
+];
+
+/**
  * Factory for creating and managing principal resolvers
  */
 export class PrincipalFactory {
-  private static readonly resolvers = new Map<
-    string,
-    PrincipalResolver<unknown>
-  >();
-  private static initialized = false;
-
-  /**
-   * Initialize the factory with default resolvers
-   */
-  private static initialize(): void {
-    if (this.initialized) {
-      return;
-    }
-
-    this.register('string', new StringPrincipalResolver());
-    this.register('output', new OutputPrincipalResolver());
-    this.register('matrix-object', new MatrixObjectPrincipalResolver());
-    this.register('resource', new ResourcePrincipalResolver());
-
-    this.initialized = true;
-  }
-
-  /**
-   * Register a principal resolver
-   */
-  static register(type: string, resolver: PrincipalResolver<unknown>): void {
-    this.resolvers.set(type, resolver);
-  }
-
   /**
    * Resolve a principal to its IAM member format and identifier
    * Uses caching to improve performance for repeated resolutions
@@ -53,8 +47,6 @@ export class PrincipalFactory {
     principal: unknown,
     principalIndex: number
   ): ResolvedPrincipal {
-    this.initialize();
-
     // Disable caching - it was causing issues with Pulumi Outputs
     // that appear identical when stringified but have different values
 
@@ -84,13 +76,13 @@ export class PrincipalFactory {
   }
 
   /**
-   * Find the appropriate resolver for a principal
+   * Find the appropriate resolver for a principal.
+   * Iterates the fixed RESOLVERS list in order and returns the first match.
    */
   private static findResolver(
     principal: unknown
   ): PrincipalResolver<unknown> | undefined {
-    const resolvers = Array.from(this.resolvers.values());
-    for (const resolver of resolvers) {
+    for (const { resolver } of RESOLVERS) {
       if (resolver.canResolve(principal)) {
         return resolver;
       }
@@ -102,7 +94,6 @@ export class PrincipalFactory {
    * Check if a principal type is supported
    */
   static isSupported(principal: unknown): boolean {
-    this.initialize();
     return this.findResolver(principal) !== undefined;
   }
 
@@ -110,16 +101,19 @@ export class PrincipalFactory {
    * Get all registered resolver types
    */
   static getRegisteredTypes(): string[] {
-    this.initialize();
-    return Array.from(this.resolvers.keys());
+    return RESOLVERS.map(({ type }) => type);
   }
 
   /**
-   * Clear all resolvers (useful for testing)
+   * No-op retained for backward-compatible test API.
+   *
+   * The resolver list is now a fixed module-level constant, so there is no
+   * mutable state to reset. Tests still call `clear()` in `beforeEach` and then
+   * `resolvePrincipal(...)`; resolution must keep working afterwards, which it
+   * does because RESOLVERS is never mutated.
    */
   static clear(): void {
-    this.resolvers.clear();
-    this.initialized = false;
+    // intentionally empty — resolvers are a fixed constant list
   }
 
   /**
