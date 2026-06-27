@@ -7,6 +7,10 @@ import { CloudInfraOutput } from '../../core/output';
 import { CloudInfraRole } from '../../components/role';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the PAM Entitlement component. */
+export const ENTITLEMENT_TYPE = 'cloud-infra:pam:CloudInfraEntitlement';
 
 /**
  * Library-specific extras for future extensibility. Empty for now but keeping
@@ -85,7 +89,7 @@ export type CloudInfraEntitlementConfig = Partial<
  * expects a **single** `meta.name` value (arrays are not supported) and it
  * records itself via {@link CloudInfraOutput} for cross-stack referencing.
  */
-export class CloudInfraEntitlement {
+export class CloudInfraEntitlement extends CloudInfraComponent {
   /** Metadata helper used to derive names, regions, etc. */
   private readonly meta: CloudInfraMeta;
   /** Underlying Pulumi resource instance. */
@@ -111,8 +115,18 @@ export class CloudInfraEntitlement {
    */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraEntitlementConfig = {}
+    cloudInfraConfig: CloudInfraEntitlementConfig = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceName = meta.getName();
+    super(
+      ENTITLEMENT_TYPE,
+      resourceName,
+      resourceName,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing PAM entitlement component', {
       component: 'pam-entitlement',
       operation: 'constructor',
@@ -168,10 +182,20 @@ export class CloudInfraEntitlement {
 
     const componentName = meta.getName();
 
+    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
+    // gcp.privilegedaccessmanager.Entitlement has NO labels → plain opts.
     this.entitlement = new gcp.privilegedaccessmanager.Entitlement(
       componentName,
-      args
+      args,
+      {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
     );
+
+    this.registerOutputs({
+      entitlement: this.entitlement,
+    });
   }
 
   /** Returns the underlying Pulumi entitlement resource. */

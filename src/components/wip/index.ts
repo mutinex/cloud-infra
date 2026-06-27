@@ -27,6 +27,13 @@ import { withDefaults } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
 import { gcpConfig } from '../../config';
+import { CloudInfraComponent } from '../../core/component';
+
+/** Pulumi type token for the Workload Identity Pool component. */
+export const WIP_TYPE = 'cloud-infra:wip:CloudInfraWIP';
+
+/** Pulumi type token for the Workload Identity Pool Provider component. */
+export const WIP_PROVIDER_TYPE = 'cloud-infra:wip:CloudInfraWIPProvider';
 
 export type CloudInfraWIPConfig = Omit<
   gcp.iam.WorkloadIdentityPoolArgs,
@@ -35,15 +42,25 @@ export type CloudInfraWIPConfig = Omit<
   project?: pulumi.Input<string>;
 };
 
-export class CloudInfraWIP {
+export class CloudInfraWIP extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly pool: gcp.iam.WorkloadIdentityPool;
   private readonly inputName: string;
 
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraWIPConfig = {}
+    cloudInfraConfig: CloudInfraWIPConfig = {},
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceNameForSuper = meta.getName();
+    super(
+      WIP_TYPE,
+      resourceNameForSuper,
+      resourceNameForSuper,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing WIP component', {
       component: 'wip',
       operation: 'constructor',
@@ -73,7 +90,16 @@ export class CloudInfraWIP {
 
     const poolArgs = withDefaults(baseArgs, overrides);
 
-    this.pool = new gcp.iam.WorkloadIdentityPool(resourceName, poolArgs);
+    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
+    // gcp.iam.WorkloadIdentityPool has NO labels → plain opts (not childOpts).
+    this.pool = new gcp.iam.WorkloadIdentityPool(resourceName, poolArgs, {
+      parent: this,
+      aliases: [{ parent: pulumi.rootStackResource }],
+    });
+
+    this.registerOutputs({
+      pool: this.pool,
+    });
   }
 
   public getPool(): gcp.iam.WorkloadIdentityPool {
@@ -126,7 +152,7 @@ export type CloudInfraWIPProviderConfig = Omit<
   workloadIdentityPoolId?: pulumi.Input<string>;
 };
 
-export class CloudInfraWIPProvider {
+export class CloudInfraWIPProvider extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly provider: gcp.iam.WorkloadIdentityPoolProvider;
   private readonly poolName: pulumi.Output<string>;
@@ -134,8 +160,18 @@ export class CloudInfraWIPProvider {
 
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraWIPProviderConfig
+    cloudInfraConfig: CloudInfraWIPProviderConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    const resourceNameForSuper = meta.getName();
+    super(
+      WIP_PROVIDER_TYPE,
+      resourceNameForSuper,
+      resourceNameForSuper,
+      { domain: meta.getDomain() },
+      opts
+    );
+
     CloudInfraLogger.info('Initializing WIP provider component', {
       component: 'wip-provider',
       operation: 'constructor',
@@ -191,15 +227,25 @@ export class CloudInfraWIPProvider {
       providerOverrides as Partial<gcp.iam.WorkloadIdentityPoolProviderArgs>
     );
 
+    // v1: root-level (no parent) → alias back to root for IN-PLACE migration.
+    // gcp.iam.WorkloadIdentityPoolProvider has NO labels → plain opts.
     this.provider = new gcp.iam.WorkloadIdentityPoolProvider(
       resourceName,
-      providerArgs
+      providerArgs,
+      {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      }
     );
 
     // Derive poolName from provider.name to ensure it contains the numeric project number.
     this.poolName = this.provider.name.apply(providerName =>
       providerName.replace(/\/providers\/.*$/, '')
     );
+
+    this.registerOutputs({
+      provider: this.provider,
+    });
   }
 
   public getProvider(): gcp.iam.WorkloadIdentityPoolProvider {
