@@ -40,8 +40,10 @@ vi.mock('@pulumi/pulumi', () => ({
 
 describe('PrincipalFactory Cache Collision Fix', () => {
   beforeEach(() => {
-    // Clear the cache before each test
-    PrincipalFactory.clearCache();
+    // Reset resolver state before each test. (Principal caching is disabled by
+    // design; the former `clearCache()` was removed in the Phase 3 dead-code
+    // excision — `clear()` resets the resolver registry, preserving test intent.)
+    PrincipalFactory.clear();
     vi.clearAllMocks();
   });
 

@@ -11,8 +11,6 @@ import {
 } from './principal-types';
 import { AllPrincipalTypes, BulkResource } from '../types/matrix-types';
 import { hasMethod } from '../../helpers';
-import { accessMatrixConfig } from '../../../config';
-import { CloudInfraLogger } from '../../logging';
 
 /**
  * Factory for creating and managing principal resolvers
@@ -21,10 +19,6 @@ export class PrincipalFactory {
   private static readonly resolvers = new Map<
     string,
     PrincipalResolver<unknown>
-  >();
-  private static readonly resolutionCache = new Map<
-    string,
-    ResolvedPrincipal
   >();
   private static initialized = false;
 
@@ -121,60 +115,11 @@ export class PrincipalFactory {
   }
 
   /**
-   * Clear all resolvers and caches (useful for testing)
+   * Clear all resolvers (useful for testing)
    */
   static clear(): void {
     this.resolvers.clear();
-    this.resolutionCache.clear();
     this.initialized = false;
-  }
-
-  /**
-   * Clear only the resolution cache (useful for memory management)
-   */
-  static clearCache(): void {
-    this.resolutionCache.clear();
-    if (accessMatrixConfig.enableDetailedLogging) {
-      CloudInfraLogger.info('Resolution cache cleared', {
-        component: 'access-matrix',
-        operation: 'cache-management',
-      });
-    }
-  }
-
-  /**
-   * Create a cache key for a principal
-   */
-  private static createCacheKey(
-    principal: unknown,
-    principalIndex: number
-  ): string {
-    if (typeof principal === 'string') {
-      return `str:${principal}:${principalIndex}`;
-    }
-
-    if (principal && typeof principal === 'object') {
-      const objString = JSON.stringify(principal);
-      const hash = this.simpleHash(objString);
-      return `obj:${hash}:${principalIndex}`;
-    }
-
-    return `${typeof principal}:${String(principal)}:${principalIndex}`;
-  }
-
-  /**
-   * A function for creating cache keys
-   * Uses a basic string hashing algorithm to create a unique identifier
-   */
-  private static simpleHash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    // Convert to hex string and ensure it's positive
-    return Math.abs(hash).toString(36);
   }
 
   /**
@@ -202,7 +147,12 @@ export class PrincipalFactory {
   }
 
   /**
-   * Deduplicate principals based on their resolved member strings
+   * Deduplicate principals based on their resolved member strings.
+   *
+   * FROZEN — v2 redesign notes §3 Trap 1. The `key` ternary below is an
+   * intentional identity no-op (both branches return `principal`): this dedups
+   * objects by reference identity, NOT by value. Do NOT "fix" it — collapsing
+   * the ternary or value-comparing would delete production IAM bindings.
    */
   static deduplicate(principals: unknown[]): unknown[] {
     const seen = new Set<unknown>();

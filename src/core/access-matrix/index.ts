@@ -105,7 +105,6 @@ export function getAccessMatrixInfo(): {
  */
 export function clearAccessMatrixCaches(): void {
   IamBuilderRegistry.clearCache();
-  PrincipalFactory.clearCache();
 
   if (accessMatrixConfig.enableDetailedLogging) {
     CloudInfraLogger.info('All caches cleared', {
