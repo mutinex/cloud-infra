@@ -67,6 +67,24 @@ export abstract class CloudInfraComponent extends pulumi.ComponentResource {
       // "Invalid or unknown key". Skip them.
       'gcp:secretmanager/secretVersion:SecretVersion',
       'gcp:secretmanager/regionalSecretVersion:RegionalSecretVersion',
+      // ── Project component transitive children ─────────────────────────────
+      // CloudInfraHostProject / CloudInfraServiceProject parent every child
+      // under the label-supporting `gcp.organizations.Project` (which carries
+      // the label transform via childOpts). Pulumi transformation inheritance
+      // (Trap §8) propagates that transform to ALL transitive children. The
+      // following project children have NO `labels` input and hard-error with
+      // "Invalid or unknown key" when one is injected. Skip them.
+      'gcp:projects/service:Service',
+      'gcp:projects/iAMMember:IAMMember',
+      'gcp:projects/serviceIdentity:ServiceIdentity',
+      'gcp:tags/tagBinding:TagBinding',
+      'gcp:compute/network:Network',
+      'gcp:compute/sharedVPCHostProject:SharedVPCHostProject',
+      'gcp:compute/sharedVPCServiceProject:SharedVPCServiceProject',
+      // Dynamic providers (DelayResource, ServiceUsageApiBootstrap) used by the
+      // project components. Dynamic resources have no GCP `labels` schema; the
+      // injected key would pollute their state / show a spurious diff. Skip.
+      'pulumi-nodejs:dynamic:Resource',
     ]);
 
   /** The resolved, generated resource name shared by the component's children. */
