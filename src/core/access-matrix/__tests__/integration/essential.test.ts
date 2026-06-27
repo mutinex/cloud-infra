@@ -358,15 +358,6 @@ describe('Critical Test Cases - Access Matrix', () => {
       }).toThrow('Principal of type \'object\' is not supported');
     });
 
-    test('should validate resource property access safely', () => {
-      const resourceWithoutName = { __pulumiType: 'gcp:storage/bucket:Bucket' };
-      
-      expect(() => {
-        const handler = ResourceRegistry.getHandler(resourceWithoutName);
-        handler.extractResourceInfo(resourceWithoutName);
-      }).toThrow('Unable to determine bucket name');
-    });
-
     test('should handle null/undefined inputs gracefully', () => {
       expect(() => ResourceRegistry.getHandler(null)).toThrow();
       expect(() => ResourceRegistry.getHandler(undefined)).toThrow();
@@ -430,14 +421,6 @@ describe('Critical Test Cases - Access Matrix', () => {
       }
     });
 
-    test('should handle resource extraction failures', () => {
-      const emptyBucket = { __pulumiType: 'gcp:storage/bucket:Bucket' };
-      const handler = ResourceRegistry.getHandler(emptyBucket);
-
-      expect(() => {
-        handler.extractResourceInfo(emptyBucket);
-      }).toThrow('Unable to determine bucket name');
-    });
   });
 
   describe('6. Real-World Scenarios', () => {

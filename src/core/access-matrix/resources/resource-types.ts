@@ -1,92 +1,71 @@
-import * as pulumi from '@pulumi/pulumi';
-import {
-  ResourceInfo,
-  ProjectResourceInfo,
-  FolderResourceInfo,
-  ServiceAccountResourceInfo,
-  BucketResourceInfo,
-  SubnetworkResourceInfo,
-  CloudRunServiceResourceInfo,
-  CloudRunJobResourceInfo,
-  SecretResourceInfo,
-  RepositoryResourceInfo,
-  ComputeInstanceResourceInfo,
-  IamBindingParams,
-} from '../types/common-types';
-
 /**
- * Base interface for resource handlers
+ * Base interface for resource handlers.
+ *
+ * Only `supportedType` is live: it is read on the IAM-creation path via
+ * `ResourceRegistry.getHandler(resource).supportedType` and feeds IAM naming
+ * (v2 redesign notes §3 Trap 2). The former `extractResourceInfo`/
+ * `createIamBinding` members (and their generic `T`/`R` params) were dead — the
+ * live path uses `IamBuilderRegistry.createIamBinding` directly — and were
+ * removed in the Phase 3 dead-code excision. The per-resource `*ResourceInfo`
+ * shapes remain live: they are used by the IAM builders (`builders/*-builder.ts`).
  */
-export interface ResourceHandler<
-  T = unknown,
-  R extends ResourceInfo = ResourceInfo,
-> {
+export interface ResourceHandler {
   readonly supportedType: string;
-  extractResourceInfo(resource: T): R;
-  createIamBinding(params: IamBindingParams): pulumi.CustomResource;
 }
 
 /**
  * Project resource handler interface
  */
-export interface ProjectResourceHandler
-  extends ResourceHandler<unknown, ProjectResourceInfo> {
+export interface ProjectResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:organizations/project:Project';
 }
 
 /**
  * Folder resource handler interface
  */
-export interface FolderResourceHandler
-  extends ResourceHandler<unknown, FolderResourceInfo> {
+export interface FolderResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:organizations/folder:Folder';
 }
 
 /**
  * Service Account resource handler interface
  */
-export interface ServiceAccountResourceHandler
-  extends ResourceHandler<unknown, ServiceAccountResourceInfo> {
+export interface ServiceAccountResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:serviceaccount/account:Account';
 }
 
 /**
  * Bucket resource handler interface
  */
-export interface BucketResourceHandler
-  extends ResourceHandler<unknown, BucketResourceInfo> {
+export interface BucketResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:storage/bucket:Bucket';
 }
 
 /**
  * Subnetwork resource handler interface
  */
-export interface SubnetworkResourceHandler
-  extends ResourceHandler<unknown, SubnetworkResourceInfo> {
+export interface SubnetworkResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:compute/subnetwork:Subnetwork';
 }
 
 /**
  * Cloud Run Service resource handler interface
  */
-export interface CloudRunServiceResourceHandler
-  extends ResourceHandler<unknown, CloudRunServiceResourceInfo> {
+export interface CloudRunServiceResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:cloudrunv2/service:Service';
 }
 
 /**
  * Cloud Run Job resource handler interface
  */
-export interface CloudRunJobResourceHandler
-  extends ResourceHandler<unknown, CloudRunJobResourceInfo> {
+export interface CloudRunJobResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:cloudrunv2/job:Job';
 }
 
 /**
  * Secret resource handler interface
  */
-export interface SecretResourceHandler
-  extends ResourceHandler<unknown, SecretResourceInfo> {
+export interface SecretResourceHandler extends ResourceHandler {
   readonly supportedType:
     | 'gcp:secretmanager/secret:Secret'
     | 'gcp:secretmanager/regionalSecret:RegionalSecret';
@@ -95,16 +74,14 @@ export interface SecretResourceHandler
 /**
  * Repository resource handler interface
  */
-export interface RepositoryResourceHandler
-  extends ResourceHandler<unknown, RepositoryResourceInfo> {
+export interface RepositoryResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:artifactregistry/repository:Repository';
 }
 
 /**
  * Compute Instance resource handler interface
  */
-export interface ComputeInstanceResourceHandler
-  extends ResourceHandler<unknown, ComputeInstanceResourceInfo> {
+export interface ComputeInstanceResourceHandler extends ResourceHandler {
   readonly supportedType: 'gcp:compute/instance:Instance';
 }
 
