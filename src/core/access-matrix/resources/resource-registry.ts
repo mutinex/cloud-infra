@@ -82,10 +82,18 @@ export class ResourceRegistry {
       throw new ResourceTypeDiscoveryError(resource);
     }
 
-    // Direct Pulumi resource type
+    // Direct Pulumi resource type.
+    //
+    // NB: our v2 wrapper components now extend `pulumi.ComponentResource`, so an
+    // instance carries its OWN `__pulumiType` (the component token, e.g.
+    // `cloud-infra:cloudrunservice:CloudRunService`) which the access-matrix
+    // does not handle. For those, fall through to the component getters
+    // (`getService()` etc.) to recover the underlying GCP resource type. Plain
+    // Pulumi resources and v1-style plain-class wrappers are unaffected.
     if (
       hasProperty(resource, '__pulumiType') &&
-      typeof resource.__pulumiType === 'string'
+      typeof resource.__pulumiType === 'string' &&
+      !resource.__pulumiType.startsWith('cloud-infra:')
     ) {
       return resource.__pulumiType;
     }
@@ -94,6 +102,15 @@ export class ResourceRegistry {
     const discoveredType = this.discoverFromComponent(resource);
     if (discoveredType) {
       return discoveredType;
+    }
+
+    // Fall back to a direct (component) `__pulumiType` if getters yielded
+    // nothing — preserves prior behaviour for any non-cloud-infra component.
+    if (
+      hasProperty(resource, '__pulumiType') &&
+      typeof resource.__pulumiType === 'string'
+    ) {
+      return resource.__pulumiType;
     }
 
     throw new ResourceTypeDiscoveryError(resource);
@@ -138,8 +155,14 @@ export class ResourceRegistry {
       return resource;
     }
 
-    // If it's already a Pulumi resource, return as-is
-    if (hasProperty(resource, '__pulumiType')) {
+    // If it's already a (non-wrapper) Pulumi resource, return as-is. v2 wrapper
+    // components carry their own `cloud-infra:` `__pulumiType`; for those we must
+    // still extract the underlying GCP child via the getters below.
+    if (
+      hasProperty(resource, '__pulumiType') &&
+      typeof resource.__pulumiType === 'string' &&
+      !resource.__pulumiType.startsWith('cloud-infra:')
+    ) {
       return resource;
     }
 
