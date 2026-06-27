@@ -111,6 +111,10 @@ export class PrincipalFactory {
    * mutable state to reset. Tests still call `clear()` in `beforeEach` and then
    * `resolvePrincipal(...)`; resolution must keep working afterwards, which it
    * does because RESOLVERS is never mutated.
+   *
+   * @deprecated Inert no-op — there is no mutable resolver state to clear.
+   * Safe to call but has no effect; retained only for backward-compatible test
+   * API and may be removed in a future major version.
    */
   static clear(): void {
     // intentionally empty — resolvers are a fixed constant list
