@@ -4,6 +4,7 @@ import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
+import { CloudInfraComponent } from '../../core/component';
 
 /**
  * Custom IAM **Role** component.
@@ -47,6 +48,26 @@ export type CloudInfraRoleConfig =
   | CloudInfraProjectRoleConfig
   | CloudInfraOrgRoleConfig;
 
+/** Pulumi type token for the custom IAM role component. */
+export const ROLE_TYPE = 'cloud-infra:role:CloudInfraRole';
+
+/**
+ * Resolves the single component name from meta, throwing the component's
+ * ValidationError (rather than meta's generic getName error) when an array
+ * name is supplied. Used to compute the `super()` args before `this` exists.
+ */
+function resolveRoleName(meta: CloudInfraMeta): string {
+  const candidateInputName = meta.getInputName();
+  if (Array.isArray(candidateInputName)) {
+    throw new ValidationError(
+      'CloudInfraRole expects a single name.',
+      'role',
+      'constructor'
+    );
+  }
+  return meta.getName();
+}
+
 /**
  * High-level class that instantiates a custom IAM role and provides helpers
  * to reference its full name (project/organization path).
@@ -60,7 +81,7 @@ export type CloudInfraRoleConfig =
  * });
  * ```
  */
-export class CloudInfraRole {
+export class CloudInfraRole extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
   private readonly role:
     | gcp.projects.IAMCustomRole
@@ -68,7 +89,17 @@ export class CloudInfraRole {
   private readonly fullName: string;
   private readonly inputName: string;
 
-  constructor(meta: CloudInfraMeta, cloudInfraConfig: CloudInfraRoleConfig) {
+  constructor(
+    meta: CloudInfraMeta,
+    cloudInfraConfig: CloudInfraRoleConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const name = resolveRoleName(meta);
+
+    // Register the component node. The custom-role child parents under `this`.
+    // The generated NAME is unchanged (F1); roleId derives from it as before.
+    super(ROLE_TYPE, name, name, { domain: meta.getDomain() }, opts);
+
     CloudInfraLogger.info('Initializing role component', {
       component: 'role',
       operation: 'constructor',
@@ -76,17 +107,8 @@ export class CloudInfraRole {
 
     this.meta = meta;
 
-    const candidateInputName = meta.getInputName();
-    if (Array.isArray(candidateInputName)) {
-      throw new ValidationError(
-        'CloudInfraRole expects a single name.',
-        'role',
-        'constructor'
-      );
-    }
-    this.inputName = candidateInputName;
-
-    const name = this.meta.getName();
+    // `name` already validated as a single (non-array) input by resolveRoleName.
+    this.inputName = meta.getInputName() as string;
     // Derive roleId by camel-casing the full component name
     const roleId = name
       .split('-')
@@ -202,7 +224,14 @@ export class CloudInfraRole {
         }),
       };
 
-      this.role = new gcp.organizations.IAMCustomRole(name, args);
+      // Custom-role moves UNDER this component but was FLAT (root) in v1 →
+      // alias back to its old root-level URN for a non-destructive migration.
+      // `gcp.organizations.IAMCustomRole` has NO `labels` field, so use plain
+      // parent opts (NOT the label-stamping `childOpts()`).
+      this.role = new gcp.organizations.IAMCustomRole(name, args, {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      });
       this.fullName = `organizations/${orgIdResolved}/roles/${roleId}`;
     } else {
       const args: gcp.projects.IAMCustomRoleArgs = {
@@ -215,10 +244,19 @@ export class CloudInfraRole {
         }),
       };
 
-      this.role = new gcp.projects.IAMCustomRole(name, args);
+      // Same migration treatment as the org-level branch: parent under the
+      // component, alias back to the old flat URN, no labels.
+      this.role = new gcp.projects.IAMCustomRole(name, args, {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      });
       this.fullName =
         pulumi.interpolate`projects/${projectId}/roles/${roleId}` as unknown as string;
     }
+
+    this.registerOutputs({
+      role: this.role,
+    });
   }
 
   /** Underlying custom role resource. */

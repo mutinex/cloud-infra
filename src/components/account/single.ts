@@ -51,6 +51,9 @@ export interface CloudInfraAccountIamMemberIdentity {
   email: pulumi.Output<string>;
 }
 
+/** Pulumi type token for the single service-account component. */
+export const ACCOUNT_TYPE = 'cloud-infra:account:CloudInfraAccount';
+
 export class CloudInfraAccount extends CloudInfraAccountBase {
   private meta: CloudInfraMeta;
   public readonly serviceAccount: gcp.serviceaccount.Account;
@@ -62,8 +65,22 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
    * @param meta - CloudInfra meta information for naming/tagging.
    * @param config - Configuration that is passed through to the underlying Pulumi resource.
    */
-  constructor(meta: CloudInfraMeta, config?: CloudInfraAccountConfig) {
-    super();
+  constructor(
+    meta: CloudInfraMeta,
+    config?: CloudInfraAccountConfig,
+    opts?: pulumi.ComponentResourceOptions
+  ) {
+    const componentName = meta.getName();
+
+    // Register the component node. Children parent under `this`. The generated
+    // NAME (used as the SA `accountId` → email identity) is unchanged (F1).
+    super(
+      ACCOUNT_TYPE,
+      componentName,
+      componentName,
+      { domain: meta.getDomain() },
+      opts
+    );
 
     CloudInfraLogger.info('Initializing single service account component', {
       component: 'account',
@@ -71,7 +88,6 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
     });
 
     this.meta = meta;
-    const componentName = meta.getName();
 
     // Narrow the potentially union-typed value to a guaranteed string. An
     // array would indicate that the caller mistakenly used `CloudInfraAccount`
@@ -86,17 +102,30 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
     }
     this.inputName = candidateInputName;
 
+    // The SA moves UNDER this component (URN gains the component parent path).
+    // It was created FLAT at the stack root in v1, so alias back to its old
+    // root-level URN for a non-destructive (update-in-place) migration.
+    // `gcp.serviceaccount.Account` has NO `labels` field → use plain parent
+    // opts, NOT the label-stamping `childOpts()` (injecting labels hard-errors).
     const { account } = createGcpServiceAccount({
       meta: meta,
       rawConfig: config || {},
       inputName: this.inputName,
       pulumiResourceName: componentName,
+      opts: {
+        parent: this,
+        aliases: [{ parent: pulumi.rootStackResource }],
+      },
     });
     this.serviceAccount = account;
 
     this.addAccount(this.inputName, account);
 
     // IAM configuration removed as requested
+
+    this.registerOutputs({
+      serviceAccount: this.serviceAccount,
+    });
   }
 
   /**
