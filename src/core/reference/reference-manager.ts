@@ -216,8 +216,8 @@ export class CloudInfraReference {
     this.stack = stack;
     this.domain = { domain: domain ?? '' };
     this.flat = flat;
-    // Flat mode reads the structured `FlatOutputRecord[]` wire, NOT the
-    // flat-string `root[name]` wire — so it is never domain-optional even when
+    // Flat mode reads the grammar-keyed flat MAP wire, NOT the flat-string
+    // `root[name]` wire — so it is never domain-optional even when
     // `domain` is omitted (a missing domain just means "do not scope by domain").
     this.domainOptional = !flat && domain === undefined;
     // The nested wire and the flat-record wire both live under an output key

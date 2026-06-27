@@ -36,12 +36,25 @@ const out = (value: unknown): pulumi.Output<string> =>
     apply: (fn: (v: unknown) => unknown) => fn(value),
   }) as unknown as pulumi.Output<string>;
 
-// The producer wraps each scalar in one `.apply(String)`; the synchronous mock
-// `.apply` makes that resolve eagerly, so the stored value is the plain string.
+// Resolves a stored flat value to its plain string. The producer now coerces
+// CONDITIONALLY: the `number` field is wrapped in `.apply(String)` (so the
+// stored value is the coerced Output), while already-`Output<string>` fields are
+// assigned BY REFERENCE (so the stored value IS the original mock Output). Both
+// expose the synchronous mock `.apply`, so applying identity here resolves the
+// underlying value uniformly regardless of which path produced it.
 const resolve = (
   map: Record<string, pulumi.Output<string>>,
   key: string
-): unknown => map[key] as unknown;
+): unknown => {
+  const stored = map[key] as unknown;
+  // A by-reference `Output<string>` is the original mock object (has synchronous
+  // `.apply`); a coerced `number` field already resolved to a plain string under
+  // the synchronous mock. Normalise both to the underlying value.
+  if (stored && typeof (stored as { apply?: unknown }).apply === 'function') {
+    return (stored as pulumi.Output<unknown>).apply(v => v);
+  }
+  return stored;
+};
 
 describe('CloudInfraOutput.getFlatOutputs() — flat keyed map', () => {
   it('a single GLOBAL resource emits one key per scalar field, NO region segment', () => {
@@ -186,12 +199,47 @@ describe('CloudInfraOutput.getFlatOutputs() — flat keyed map', () => {
     ).toThrow(/Flat-output key collision: 'au\.sa\.dup\.id'/);
   });
 
+  it('THROWS when two DISTINCT resources compose the same prefix with DISJOINT fields', () => {
+    // Both unmapped types derive the SAME fallback service alias ("widget"),
+    // so with the same domain + grouping key they compose an identical prefix
+    // `au.widget.shared`. Their field sets are DISJOINT (id+email vs name+member),
+    // so neither key collides on `prefix.field` — the old per-key guard would let
+    // both through and the consumer (which groups by prefix) would silently MERGE
+    // them into ONE fabricated record. The prefix-ownership guard must catch this.
+    const mgr = new CloudInfraOutput();
+    const a = {
+      id: out('a-id'),
+      email: out('a@example.com'),
+    } as unknown as OutputResource;
+    const b = {
+      name: out('b-name'),
+      member: out('serviceAccount:b@example.com'),
+    } as unknown as OutputResource;
+
+    mgr.record('gcp:foo:Widget', 'shared', metaFor('au'), a);
+    expect(() =>
+      mgr.record('gcp:bar:Widget', 'shared', metaFor('au'), b)
+    ).toThrow(/Flat-output prefix collision: the prefix 'au\.widget\.shared'/);
+  });
+
   it('THROWS on a grouping key containing the separator (would corrupt the positional parse)', () => {
     const mgr = new CloudInfraOutput();
     const sa = { id: out('id') } as unknown as OutputResource;
     expect(() =>
       mgr.record('gcp:serviceaccount:Account', 'my.app', metaFor('au'), sa)
-    ).toThrow(/must not contain the key separator/);
+    ).toThrow(/Invalid flat-output name \(grouping key\) segment 'my\.app'/);
+  });
+
+  it('THROWS on a grouping key with whitespace/unicode (positive charset guard)', () => {
+    const mgr = new CloudInfraOutput();
+    const sa = { id: out('id') } as unknown as OutputResource;
+    expect(() =>
+      mgr.record('gcp:serviceaccount:Account', 'my app', metaFor('au'), sa)
+    ).toThrow(/it must match/);
+    const mgr2 = new CloudInfraOutput();
+    expect(() =>
+      mgr2.record('gcp:serviceaccount:Account', 'appé', metaFor('au'), sa)
+    ).toThrow(/it must match/);
   });
 
   it('coerces a numeric Output (e.g. project number) to a string Output', () => {
