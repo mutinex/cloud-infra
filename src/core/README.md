@@ -535,7 +535,8 @@ Validate inputs through the Zod meta schema, which throws a `ZodError`
 import { CloudInfraMeta } from '@mutinex/cloud-infra';
 
 // Construction parses input against CloudInfraMetaSchema; invalid names,
-// locations, or over-length prefixes throw at construction time.
+// locations, or over-length prefixes throw at construction time. (This shows
+// CloudInfraMeta's own validation — components are built name-first, see above.)
 const meta = new CloudInfraMeta({ name: 'api', domain: 'au' });
 ```
 
