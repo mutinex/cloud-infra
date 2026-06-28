@@ -105,12 +105,12 @@ preview gate (needs creds agents lack) and does the merge.
 - **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
   AND committed on `v2`. Keep both updated.
 
-## 4. CURRENT STATE (v2 @ 9b28c95, pushed to origin/v2, 699 green — all PREVIEW-ONLY, no apply ever run)
-> Active program: `docs/v2-SIMPLIFICATION-PLAN.md`. Waves 1–2 DONE & gated. Next: Wave 3 (shim-able
-> consolidations: single/bulk merge w/ URN-preserving alias + opt-in auto-label), then Wave 4
-> (`CloudInfraService` capstone). NOTE: output-wire collapse + meta-first/getter hard-removal are
-> DEFERRED to a future major — they can't be shimmed losslessly (flat wire can't hold the nested
-> wire's non-scalar fields), so under the "keep backward-compat shims" directive they stay dual/deprecated.
+## 4. CURRENT STATE (v2 @ 6422996, pushed to origin/v2, 745 green — all PREVIEW-ONLY, no apply ever run)
+> Active program: `docs/v2-SIMPLIFICATION-PLAN.md`. Waves 1–3 DONE, gated zero-replace, and
+> review-team-cleared (all Critical/Major fixed in the Wave-3 consolidated fix pass, incl. the two
+> Waves-1–2 Majors: `AccessMatrixCases` back-compat restored + `/org` lazy config default). Next: Wave 4
+> (`CloudInfraService` capstone — additive; NO IAM on it). DEFERRED to a future major (can't be shimmed
+> losslessly): output-wire collapse + meta-first/getter hard-removal — they stay dual/deprecated.
 MERGED & validated:
 - **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
   (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases
