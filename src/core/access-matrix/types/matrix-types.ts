@@ -215,19 +215,33 @@ export interface MatrixUseCase {
 export type MatrixUseCaseInput = MatrixPolicyRule[] | MatrixUseCase;
 
 /**
- * A map of use case names to their CANONICAL use case objects.
+ * A map of use case names to use case inputs — the historically-public, WIDE
+ * type. Values may be the canonical {@link MatrixUseCase} object OR, for
+ * back-compat, a bare {@link MatrixPolicyRule} array.
  *
- * This is the taught type: one shape, `{ principals?, rules }`. For the
- * back-compat surface that still accepts the bare-array form at runtime, see
- * {@link AccessMatrixCasesInput}.
+ * This name is kept WIDE deliberately: it was public before the access-matrix
+ * rework and consumers annotate their `cases` with it while passing a bare-array
+ * case. Narrowing it to object-only would be a SOURCE-BREAKING change. The
+ * constructor accepts this wide type. New code is TAUGHT the object form via the
+ * README and the narrower {@link AccessMatrixCasesStrict} alias, but the type
+ * itself stays wide for back-compat.
  */
-export type AccessMatrixCases = Record<string, MatrixUseCase>;
+export type AccessMatrixCases = Record<string, MatrixUseCaseInput>;
 
 /**
- * Back-compat input map: values may be the canonical {@link MatrixUseCase}
- * object OR a bare {@link MatrixPolicyRule} array. The access-matrix constructor
- * accepts this wider type so existing array-form callers keep working; the
- * documented/taught type for new code is {@link AccessMatrixCases}.
+ * Strict, object-only map of use case names to CANONICAL {@link MatrixUseCase}
+ * objects (`{ principals?, rules }`). This is the TAUGHT shape for new code; it
+ * is a separate, narrower alias so {@link AccessMatrixCases} can stay WIDE for
+ * back-compat. Annotate new `cases` with this to opt into the object-only form.
+ */
+export type AccessMatrixCasesStrict = Record<string, MatrixUseCase>;
+
+/**
+ * Back-compat input map alias (WIDE — same as {@link AccessMatrixCases}). Values
+ * may be the canonical {@link MatrixUseCase} object OR a bare
+ * {@link MatrixPolicyRule} array. The access-matrix constructor accepts this
+ * wider type so existing array-form callers keep working; the documented/taught
+ * type for new code is {@link AccessMatrixCasesStrict}.
  */
 export type AccessMatrixCasesInput = Record<string, MatrixUseCaseInput>;
 

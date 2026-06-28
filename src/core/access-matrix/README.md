@@ -29,6 +29,12 @@ Each use case is a `MatrixUseCase` object — the canonical, documented shape:
 > wrapping `{ rules }` object) is still accepted at runtime and normalized
 > internally, so existing configurations keep working. New code should use the
 > `{ principals?, rules }` object form shown throughout this document.
+>
+> **Types:** the public `AccessMatrixCases` type stays WIDE — its values may be
+> either the `MatrixUseCase` object or a bare `MatrixPolicyRule[]` array — so
+> existing consumers annotating their `cases` with it keep type-checking. New
+> code that wants the object-only shape enforced at compile time can annotate
+> with `AccessMatrixCasesStrict` instead. The constructor accepts the wide type.
 
 A key feature of the Access Matrix is its flexible principal management. Principals can be defined in three places, which are combined and deduplicated automatically:
 

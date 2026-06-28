@@ -12,6 +12,7 @@ export type {
   MatrixPrincipalInput,
   MatrixUseCase,
   AccessMatrixCases,
+  AccessMatrixCasesStrict,
   AccessMatrixCasesInput,
 } from './types/matrix-types';
 

@@ -51,6 +51,7 @@ export type {
   MatrixPrincipalInput,
   MatrixUseCase,
   AccessMatrixCases,
+  AccessMatrixCasesStrict,
   AccessMatrixCasesInput,
 } from './core/access-matrix/types/matrix-types';
 export type {
