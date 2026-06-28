@@ -380,6 +380,8 @@ const accessMatrix = new CloudInfraAccessMatrix({
 
 > **Default is OFF and byte-identical to today.** With `autoLabel` unset or `false`, the `role-<index>` fallback is preserved exactly, so existing consumers see **zero IAM binding rename and zero replace**. Opting in is a conscious, one-time migration on the consumer's side. `grant` exposes the same `autoLabel` / `roleHint` options.
 
+> **Note on long names.** The derived segment (`auto-<component>-<roleToken>`) is longer than `role-<index>`, so the full `${component}:${safeRole}:${principal}` name is more likely to hit the frozen 100-char truncation (Frozen Contract F3). Prefer a short, distinctive `roleHint` when your component names are long, so the truncated names stay unambiguous.
+
 ## Supported Resources
 
 The Access Matrix comes with built-in support for a variety of common GCP resources:
