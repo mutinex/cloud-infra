@@ -87,6 +87,16 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
   }
   /** `true` when constructed with a `string[]` (bulk arity). */
   private readonly isBulk: boolean;
+  /**
+   * Explicit, PUBLIC bulk marker consumed by the access-matrix principal
+   * expander ({@link PrincipalFactory.expandPrincipals}). Since the merged single
+   * arity now also exposes `getAccounts()`, the presence of `getAccounts()` alone
+   * no longer distinguishes a bulk component; this marker (set `true` ONLY for
+   * the array arity) lets the expander expand genuine bulk and resolve a single
+   * account through the wrapper path. Not a resource input — does not affect any
+   * emitted resource.
+   */
+  public readonly isCloudInfraBulkResource: boolean;
   /** The single input name (single arity only); `undefined` for bulk. */
   private readonly singleInputName?: string;
   private configs: Record<string, CloudInfraAccountPulumiConfig> = {};
@@ -212,6 +222,7 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
 
     this.meta = meta;
     this.isBulk = bulk;
+    this.isCloudInfraBulkResource = bulk;
 
     const names = meta.getNames();
 

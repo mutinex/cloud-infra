@@ -107,10 +107,20 @@ export type AllPrincipalTypes =
   | undefined;
 
 /**
- * Interface for bulk resources that can expand to multiple sub-resources
+ * Interface for bulk resources that can expand to multiple sub-resources.
+ *
+ * NOTE on `isCloudInfraBulkResource`: the merged single `CloudInfraAccount` now
+ * ALSO exposes `getAccounts()` (a single-entry record), so `getAccounts()` alone
+ * is NO LONGER a reliable bulk signal. A genuine bulk arity sets this explicit
+ * marker to `true`; `PrincipalFactory.expandPrincipals` uses it (plus a
+ * `keys.length > 1` heuristic) to decide whether to expand. A single account is
+ * therefore resolved through the WRAPPER path (byte-identical member +
+ * identifier), exactly as before the single class gained `getAccounts()`.
  */
 export interface BulkResource {
   getAccounts(): Record<string, unknown>;
+  /** `true` ONLY on a genuine bulk (array-arity) component. */
+  isCloudInfraBulkResource?: boolean;
 }
 
 /**

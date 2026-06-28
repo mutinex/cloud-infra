@@ -202,40 +202,38 @@ describe('W3-C — merged CloudInfraAccount single/bulk/alias equivalence', () =
     expect(captured.filter(r => r.type === T_SA).length).toBeGreaterThan(0);
   });
 
-  // ── Trap 6 / access-matrix principal-expansion guard ─────────────────────
+  // ── Trap 6 / access-matrix principal-expansion gate (fix #4) ─────────────
   //
   // The merged single CloudInfraAccount now ALSO exposes getAccounts() (a
-  // single-entry record). PrincipalFactory.expandPrincipals checks for
-  // getAccounts() FIRST, so a single account passed as an access-matrix
-  // principal is now EXPANDED into its raw child gcp.serviceaccount.Account
-  // instead of being resolved through the wrapper. This pins that the resolved
-  // IAM member string AND binding identifier come out byte-identical, so the
-  // change of code path is provably a no-op for the live access-matrix gate.
-  it('single account as access-matrix principal resolves byte-identically post-expansion', async () => {
+  // single-entry record). expandPrincipals USED to duck-type getAccounts() and
+  // would have expanded a SINGLE account into its raw child SA. The gate now
+  // expands ONLY on genuine bulk-ness (explicit isCloudInfraBulkResource marker
+  // OR >1 contained account), so a single account resolves via the WRAPPER path,
+  // exactly as before the single class gained getAccounts().
+  it('single account is NOT expanded → resolves via the wrapper (byte-identical member + identifier)', async () => {
     const resolver = new ResourcePrincipalResolver();
 
-    // Post-merge path: expand → raw SA child → resolve.
+    // Gate keeps the single account un-expanded: expansion returns the WRAPPER
+    // itself (reference-identical), NOT its child gcp.serviceaccount.Account.
     const expanded = PrincipalFactory.expandPrincipals([single_name]);
     expect(expanded).toHaveLength(1);
-    const expandedResolved = resolver.resolve(
-      expanded[0] as never,
-      0
-    );
+    expect(expanded[0]).toBe(single_name);
+    expect(single_name.isCloudInfraBulkResource).toBe(false);
 
-    // Pre-merge path simulation: resolve the wrapper directly (no expansion,
-    // exactly what happened before the single class gained getAccounts()).
+    // The wrapper resolves to the frozen single member + identifier (Trap 6).
     const wrapperResolved = resolver.resolve(single_name as never, 0);
+    expect(wrapperResolved.identifier).toBe('project-app-au');
+    const member = await read(wrapperResolved.member as pulumi.Output<string>);
+    expect(member.startsWith('serviceAccount:')).toBe(true);
+  });
 
-    // Identifier (→ IAM binding resource name, Trap 6) must be byte-identical.
-    expect(expandedResolved.identifier).toBe('project-app-au');
-    expect(expandedResolved.identifier).toBe(wrapperResolved.identifier);
-
-    // Member string must be byte-identical (same SA email).
-    const m1 = await read(
-      expandedResolved.member as pulumi.Output<string>
-    );
-    const m2 = await read(wrapperResolved.member as pulumi.Output<string>);
-    expect(m1).toBe(m2);
-    expect(m1.startsWith('serviceAccount:')).toBe(true);
+  it('multi-account bulk IS expanded to its child accounts (unchanged)', () => {
+    // merged_arr = ['primary','global'] → expands to its two child SAs, in
+    // input-name (getAccounts) key order, exactly as before the gate.
+    expect(merged_arr.isCloudInfraBulkResource).toBe(true);
+    const expanded = PrincipalFactory.expandPrincipals([merged_arr]);
+    const children = Object.values(merged_arr.getAccounts());
+    expect(expanded).toHaveLength(2);
+    expect(expanded).toEqual(children);
   });
 });

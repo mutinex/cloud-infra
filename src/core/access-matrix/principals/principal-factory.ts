@@ -135,9 +135,27 @@ export class PrincipalFactory {
         return [];
       }
 
-      // Handle CloudInfraBulkAccount or similar objects with getAccounts method
+      // Handle CloudInfraBulkAccount or similar objects with getAccounts method.
+      //
+      // GATING (Trap 6, live access-matrix path): the merged single
+      // CloudInfraAccount now ALSO exposes getAccounts() (a single-entry record),
+      // so getAccounts() alone is no longer a reliable bulk signal — expanding a
+      // SINGLE account here would resolve via its raw child SA instead of the
+      // wrapper, changing the resolution code path. We expand ONLY on genuine
+      // bulk-ness: an explicit `isCloudInfraBulkResource` marker (set true on the
+      // array arity) OR more than one contained account. A single account
+      // therefore falls through and is resolved via the WRAPPER path, exactly as
+      // before the single class gained getAccounts() — byte-identical member +
+      // identifier. Bulk expansion is unchanged.
       if (hasMethod(principal, 'getAccounts')) {
-        return Object.values((principal as BulkResource).getAccounts());
+        const bulk = principal as BulkResource;
+        const accounts = bulk.getAccounts();
+        const isGenuineBulk =
+          bulk.isCloudInfraBulkResource === true ||
+          Object.keys(accounts).length > 1;
+        if (isGenuineBulk) {
+          return Object.values(accounts);
+        }
       }
 
       return [principal];
