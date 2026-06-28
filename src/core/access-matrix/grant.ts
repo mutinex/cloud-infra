@@ -17,6 +17,21 @@ export interface GrantOptions {
    */
   label?: string;
   /**
+   * OPT-IN (default `false`). Passed through verbatim as the policy rule's
+   * `autoLabel`. When `true` and no manual `label` is set and the `role` is an
+   * opaque `pulumi.Output<string>`, the emitted IAM resource name uses a
+   * deterministic, reorder-stable derived safe-role segment instead of the
+   * historical `role-<index>` fallback. Default (off) is byte-identical to
+   * today. See {@link import('./types/matrix-types').MatrixPolicyRule.autoLabel}.
+   */
+  autoLabel?: boolean;
+  /**
+   * Optional stable role hint, passed through verbatim as the policy rule's
+   * `roleHint`. Used ONLY by the `autoLabel` path for opaque `Output` roles. See
+   * {@link import('./types/matrix-types').MatrixPolicyRule.roleHint}.
+   */
+  roleHint?: string;
+  /**
    * Internal case name used for the single-rule matrix. Does NOT affect the
    * emitted IAM resource names (those are
    * `${componentName}:${safeRole}:${principalIdentifier}`) — it only labels log
@@ -73,6 +88,8 @@ export function grant(
           role,
           principals: to,
           label: opts?.label,
+          autoLabel: opts?.autoLabel,
+          roleHint: opts?.roleHint,
         },
       ],
     },

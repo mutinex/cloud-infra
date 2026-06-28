@@ -351,6 +351,37 @@ The `<role-name>` part of the resource name is generated based on these rules, i
 3.  **`CloudInfraRole` object**: If you pass a `CloudInfraRole` component, the library attempts to use the role's name.
 4.  **Fallback**: If the role name cannot be resolved at preview time (for example, if the `role` is a `pulumi.Output<string>` and **no `label` is given**), the library will fall back to a generic name like `role-0`, where `0` is the index of the rule. This makes the Pulumi plan harder to read, which is why using `label` is strongly encouraged.
 
+### Opt-in deterministic, reorder-stable auto-label (`autoLabel`)
+
+The `role-<index>` fallback (rule 4 above) is not only opaque, it is **reorder-fragile**: because the index comes from the rule's position in the `rules` array, reordering rules renames the IAM binding, which Pulumi sees as a destroy/recreate.
+
+Set `autoLabel: true` on a rule (or pass `autoLabel: true` to `grant`) to **opt in** to a deterministic, **reorder-stable** derived safe-role segment instead. It applies **only** to the fallback case — an opaque `pulumi.Output<string>` role with no manual `label`:
+
+- The derived value is `auto-<component>-<roleToken>`, where `<component>` is the (sanitized) resource component name and `<roleToken>` is, in priority order: the rule's `roleHint` (sanitized), then the role Output's own `__identifierHint` (sanitized), then `role-<hash>` — a stable FNV-1a hash of the role reference.
+- It is derived **purely from the role reference and the resource name, never from the rule's array position**, so reordering rules does not rename (and therefore does not replace) the binding.
+- A manual `label` always wins; string roles and `CloudInfraRole` components are unaffected (they already yield stable names).
+
+```typescript
+const accessMatrix = new CloudInfraAccessMatrix({
+  'external-role-access': {
+    rules: [
+      {
+        resource: dataBucket,
+        role: externalRole, // an opaque pulumi.Output<string>
+        principals: ['group:auditors@example.com'],
+        autoLabel: true,
+        roleHint: 'bucket-auditor', // optional, recommended stable token
+      },
+    ],
+  },
+});
+// → IAM binding name middle segment: `auto-<bucket>-bucket-auditor`
+```
+
+> **Default is OFF and byte-identical to today.** With `autoLabel` unset or `false`, the `role-<index>` fallback is preserved exactly, so existing consumers see **zero IAM binding rename and zero replace**. Opting in is a conscious, one-time migration on the consumer's side. `grant` exposes the same `autoLabel` / `roleHint` options.
+
+> **Note on long names.** The derived segment (`auto-<component>-<roleToken>`) is longer than `role-<index>`, so the full `${component}:${safeRole}:${principal}` name is more likely to hit the frozen 100-char truncation (Frozen Contract F3). Prefer a short, distinctive `roleHint` when your component names are long, so the truncated names stay unambiguous.
+
 ## Supported Resources
 
 The Access Matrix comes with built-in support for a variety of common GCP resources:
