@@ -12,6 +12,24 @@ The Access Matrix operates on a few key concepts:
 - **Role**: A collection of permissions. This can be a standard GCP role (e.g., `roles/storage.objectViewer`) or a custom role.
 - **Resource**: The GCP resource to which the permissions are applied (e.g., a Project, Storage Bucket, or Secret).
 
+### Use Case Shape
+
+Each use case is a `MatrixUseCase` object — the canonical, documented shape:
+
+```typescript
+{
+  '<use-case-name>': {
+    principals?: [...], // optional, apply to every rule in this case
+    rules: [ { resource, role, principals?, label? }, ... ],
+  },
+}
+```
+
+> **Back-compat:** a bare `MatrixPolicyRule[]` array (a use case value with no
+> wrapping `{ rules }` object) is still accepted at runtime and normalized
+> internally, so existing configurations keep working. New code should use the
+> `{ principals?, rules }` object form shown throughout this document.
+
 A key feature of the Access Matrix is its flexible principal management. Principals can be defined in three places, which are combined and deduplicated automatically:
 
 1.  **Pulumi Configuration**: Globally for a use case in your `Pulumi.<stack>.yaml` file.
@@ -104,18 +122,22 @@ import { parentFolder } from './foldersTags';
 import { orgViewer, orgOrganizationProvisioner } from './roles';
 
 const organizationAccessMatrix = new CloudInfraAccessMatrix({
-  'org-wide-viewer': [
-    {
-      resource: parentFolder,
-      role: orgViewer, // Custom organization role
-    },
-  ],
-  'org-wide-owner': [
-    {
-      resource: parentFolder,
-      role: 'roles/owner',
-    },
-  ],
+  'org-wide-viewer': {
+    rules: [
+      {
+        resource: parentFolder,
+        role: orgViewer, // Custom organization role
+      },
+    ],
+  },
+  'org-wide-owner': {
+    rules: [
+      {
+        resource: parentFolder,
+        role: 'roles/owner',
+      },
+    ],
+  },
 });
 ```
 
@@ -178,15 +200,17 @@ import { CloudInfraAccessMatrix } from '@mutinex/cloud-infra';
 import { bulkServiceAccounts } from './resources'; // A bulk resource component
 
 const accessMatrix = new CloudInfraAccessMatrix({
-  'bulk-sa-access': [
-    {
-      // The Access Matrix will call bulkServiceAccounts.getAccounts()
-      // and apply this rule to each returned service account.
-      resource: bulkServiceAccounts,
-      role: 'roles/iam.serviceAccountUser',
-      principals: ['user:admin@example.com'],
-    },
-  ],
+  'bulk-sa-access': {
+    rules: [
+      {
+        // The Access Matrix will call bulkServiceAccounts.getAccounts()
+        // and apply this rule to each returned service account.
+        resource: bulkServiceAccounts,
+        role: 'roles/iam.serviceAccountUser',
+        principals: ['user:admin@example.com'],
+      },
+    ],
+  },
 });
 ```
 
@@ -283,22 +307,26 @@ const externalRole = new pulumi.StackReference('org/roles/prod').getOutput(
 const dynamicSa = new gcp.serviceaccount.Account('dynamic-sa');
 
 const accessMatrix = new CloudInfraAccessMatrix({
-  'auditor-access': [
-    {
-      resource: project,
-      role: auditorRole, // A. Pass the role object directly
-      principals: ['group:auditors@example.com'],
-    },
-  ],
-  'generic-inputs-example': [
-    {
-      resource: dataBucket,
-      role: externalRole, // B. A generic pulumi.Output<string> is supported
-      principals: [dynamicSa], // C. A generic resource acting as a principal is supported
-      // The `label` is critical here for a clean Pulumi preview when the role is an Output
-      label: 'bucket-auditor-from-external-role',
-    },
-  ],
+  'auditor-access': {
+    rules: [
+      {
+        resource: project,
+        role: auditorRole, // A. Pass the role object directly
+        principals: ['group:auditors@example.com'],
+      },
+    ],
+  },
+  'generic-inputs-example': {
+    rules: [
+      {
+        resource: dataBucket,
+        role: externalRole, // B. A generic pulumi.Output<string> is supported
+        principals: [dynamicSa], // C. A generic resource acting as a principal is supported
+        // The `label` is critical here for a clean Pulumi preview when the role is an Output
+        label: 'bucket-auditor-from-external-role',
+      },
+    ],
+  },
 });
 ```
 

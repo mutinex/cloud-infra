@@ -154,6 +154,11 @@ export interface MatrixPolicyRule {
 
 /**
  * Use case configuration with optional case-level principals.
+ *
+ * This `{ principals?, rules }` object is the CANONICAL, documented shape for a
+ * use case. Prefer it. The bare-`MatrixPolicyRule[]` array form is still parsed
+ * at runtime (see {@link MatrixUseCaseInput} and `normalizeUseCase`) for
+ * backward compatibility, but is no longer the taught type.
  */
 export interface MatrixUseCase {
   /**
@@ -167,14 +172,32 @@ export interface MatrixUseCase {
 }
 
 /**
- * Flexible use case input - can be an array of policy rules or a use case object.
+ * Flexible use case input accepted AT RUNTIME — either the canonical
+ * {@link MatrixUseCase} object or, for back-compat, a bare array of
+ * {@link MatrixPolicyRule}. `normalizeUseCase` collapses both to a
+ * `MatrixUseCase` before processing.
+ *
+ * New code should use the {@link MatrixUseCase} object form. This wider union
+ * exists only so existing array-form callers keep type-checking.
  */
 export type MatrixUseCaseInput = MatrixPolicyRule[] | MatrixUseCase;
 
 /**
- * A map of use case names to their respective inputs.
+ * A map of use case names to their CANONICAL use case objects.
+ *
+ * This is the taught type: one shape, `{ principals?, rules }`. For the
+ * back-compat surface that still accepts the bare-array form at runtime, see
+ * {@link AccessMatrixCasesInput}.
  */
-export type AccessMatrixCases = Record<string, MatrixUseCaseInput>;
+export type AccessMatrixCases = Record<string, MatrixUseCase>;
+
+/**
+ * Back-compat input map: values may be the canonical {@link MatrixUseCase}
+ * object OR a bare {@link MatrixPolicyRule} array. The access-matrix constructor
+ * accepts this wider type so existing array-form callers keep working; the
+ * documented/taught type for new code is {@link AccessMatrixCases}.
+ */
+export type AccessMatrixCasesInput = Record<string, MatrixUseCaseInput>;
 
 /**
  * Context for processing a single policy rule.

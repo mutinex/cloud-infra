@@ -1,6 +1,6 @@
 import { CloudInfraAccessMatrix } from './core/access-matrix';
 import { initializeIamBuilders, isInitialized } from './registry-initializer';
-import { AccessMatrixCases } from './types/matrix-types';
+import { AccessMatrixCasesInput } from './types/matrix-types';
 
 // Export the main class
 export { CloudInfraAccessMatrix } from './core/access-matrix';
@@ -12,6 +12,7 @@ export type {
   MatrixPrincipalInput,
   MatrixUseCase,
   AccessMatrixCases,
+  AccessMatrixCasesInput,
 } from './types/matrix-types';
 
 export type {
@@ -47,11 +48,14 @@ if (!isInitialized()) {
  * Create a new CloudInfraAccessMatrix instance with automatic initialization.
  * This is the main entry point for the access matrix system.
  *
- * @param cases - Access matrix cases mapping case names to policy rules or use case objects.
+ * @param cases - Access matrix cases mapping case names to use case objects.
+ *              The canonical value shape is the `MatrixUseCase`
+ *              `{ principals?, rules }` object; a bare `MatrixPolicyRule[]`
+ *              array is still accepted per case for backward compatibility.
  * @returns New CloudInfraAccessMatrix instance
  */
 export function createAccessMatrix(
-  cases: AccessMatrixCases
+  cases: AccessMatrixCasesInput
 ): CloudInfraAccessMatrix {
   // Ensure builders are initialized
   if (!isInitialized()) {
