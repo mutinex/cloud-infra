@@ -385,7 +385,7 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
   }
 
   /** Returns the lone account for single arity, or throws on a bulk instance. */
-  protected requireSingle(op: string): gcp.serviceaccount.Account {
+  private requireSingle(op: string): gcp.serviceaccount.Account {
     if (this.isBulk) {
       throw new ValidationError(
         `CloudInfraAccount.${op}() with no name is only valid for a single (string) account. This is a bulk (array) instance — use getAccount(name) / getAccounts().`,

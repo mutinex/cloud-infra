@@ -55,6 +55,8 @@ import {
   ACCOUNT_BULK_TYPE,
 } from '../single';
 import { CloudInfraBulkAccount, BULK_ACCOUNT_TYPE } from '../bulk';
+import { PrincipalFactory } from '../../../core/access-matrix/principals/principal-factory';
+import { ResourcePrincipalResolver } from '../../../core/access-matrix/principals/principal-types';
 
 const T_SA = 'gcp:serviceaccount/account:Account';
 
@@ -198,5 +200,42 @@ describe('W3-C — merged CloudInfraAccount single/bulk/alias equivalence', () =
 
   it('child SA resources were captured', () => {
     expect(captured.filter(r => r.type === T_SA).length).toBeGreaterThan(0);
+  });
+
+  // ── Trap 6 / access-matrix principal-expansion guard ─────────────────────
+  //
+  // The merged single CloudInfraAccount now ALSO exposes getAccounts() (a
+  // single-entry record). PrincipalFactory.expandPrincipals checks for
+  // getAccounts() FIRST, so a single account passed as an access-matrix
+  // principal is now EXPANDED into its raw child gcp.serviceaccount.Account
+  // instead of being resolved through the wrapper. This pins that the resolved
+  // IAM member string AND binding identifier come out byte-identical, so the
+  // change of code path is provably a no-op for the live access-matrix gate.
+  it('single account as access-matrix principal resolves byte-identically post-expansion', async () => {
+    const resolver = new ResourcePrincipalResolver();
+
+    // Post-merge path: expand → raw SA child → resolve.
+    const expanded = PrincipalFactory.expandPrincipals([single_name]);
+    expect(expanded).toHaveLength(1);
+    const expandedResolved = resolver.resolve(
+      expanded[0] as never,
+      0
+    );
+
+    // Pre-merge path simulation: resolve the wrapper directly (no expansion,
+    // exactly what happened before the single class gained getAccounts()).
+    const wrapperResolved = resolver.resolve(single_name as never, 0);
+
+    // Identifier (→ IAM binding resource name, Trap 6) must be byte-identical.
+    expect(expandedResolved.identifier).toBe('project-app-au');
+    expect(expandedResolved.identifier).toBe(wrapperResolved.identifier);
+
+    // Member string must be byte-identical (same SA email).
+    const m1 = await read(
+      expandedResolved.member as pulumi.Output<string>
+    );
+    const m2 = await read(wrapperResolved.member as pulumi.Output<string>);
+    expect(m1).toBe(m2);
+    expect(m1.startsWith('serviceAccount:')).toBe(true);
   });
 });
