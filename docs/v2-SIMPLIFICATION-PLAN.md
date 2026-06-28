@@ -63,6 +63,16 @@ Access-matrix guardrails to "earn" the chokepoint: deny/opt-in public principals
 (`allUsers`/`allAuthenticatedUsers`), deny primitive roles by default, a policy hook (OPA/conftest),
 external/cross-org principal detection, an audit-manifest output. Parked until the simplification lands.
 
+## Shim-constraint scoping (2026-06-28)
+"Go for all WITH backward-compat shims" self-excludes changes that can't be shimmed losslessly:
+- **Output-wire collapse → DEFERRED to major.** Flat wire can't hold nested non-scalar fields
+  (`urls[]`, `customPlacementConfig`); a `getOutputs()` shim from flat would drop them = a real break.
+  Keep both wires (flat canonical, nested `@deprecated`) until shims drop.
+- **Meta-first overloads + deprecated reference/component getters → stay as `@deprecated` shims** (no
+  hard removal now; already deprecated). Removal waits for the major.
+- **Shim-able (proceeding):** single+bulk merge (URN-preserving `CloudInfraBulkX` alias), opt-in
+  deterministic auto-label, `CloudInfraService` capstone.
+
 ## Progress log
 - **Wave 1 — DONE & merged @ `941a04a`, 522 tests, zero-replace gate PASSED** (dataos/dev, mtx/dev, mtx-org/prd; only the known `1customer` delete). WS-A access-matrix (HIGH SA-prefix bug fixed forward — SA output byte-identical, fail-loud on non-SA; `createAccessMatrix` root export; use-case-shape collapse; `saMember`/`member`/`ref` helpers; central `grant()` one-liner). WS-B one shared typed key-grammar (output keys byte-identical). WS-C name-first for folder/pam/tag, uniform `ComponentConfig` Omit, `project` field unify (deprecated aliases), uniform `labels`, hoisted constructor-split helper.
   - **Carry-forward residuals:** (1) name-first `CloudInfraEntitlement` (pam) cannot set GCP-API `location` (type-incompat with `NamingArgs.location`) — meta-first is the escape hatch; (2) the subnet/connector/nat `ComponentConfig` Omit turns a previously-silently-ignored `region`/`name`/`project` config field into a consumer COMPILE error on upgrade (codemod/migration note); (3) NAT nested `router` arm still exposes raw meta-managed fields (follow-up sweep).
