@@ -9,6 +9,7 @@ import {
   getServiceAlias,
   getTypeForServiceAlias,
   FLAT_KEY_SEPARATOR,
+  parseFlatKey,
 } from './config';
 import type {
   ReferenceDomain,
@@ -452,7 +453,6 @@ export class CloudInfraReference {
     name: string;
     record: ResourceOutput;
   }> {
-    const sep = FLAT_KEY_SEPARATOR;
     const byPrefix = new Map<
       string,
       {
@@ -465,16 +465,18 @@ export class CloudInfraReference {
     >();
 
     for (const [key, value] of Object.entries(map)) {
-      const seg = key.split(sep);
-      // Need at least domain.service.name.field (4) — optionally +region (5).
-      if (seg.length !== 4 && seg.length !== 5) continue;
-      const domain = seg[0];
-      const service = seg[1];
-      const field = seg[seg.length - 1];
-      const name = seg[seg.length - 2];
-      const region = seg.length === 5 ? seg[2] : undefined;
+      // Parse via the shared grammar — the single place a flat key is split.
+      // Malformed (wrong-arity) keys parse to `undefined` and are skipped.
+      const parsed = parseFlatKey(key);
+      if (parsed === undefined) continue;
+      const { domain, service, region, name, field } = parsed;
 
-      const prefix = seg.slice(0, seg.length - 1).join(sep);
+      // Group by the addressing prefix (everything before `<field>`): the key
+      // with its final `.<field>` segment removed. Derive it positionally from
+      // the SAME split the grammar used, so the read path stays a pure
+      // re-grouping (no validation/throw on already-emitted wire data).
+      const lastSep = key.lastIndexOf(FLAT_KEY_SEPARATOR);
+      const prefix = key.slice(0, lastSep);
       let group = byPrefix.get(prefix);
       if (!group) {
         group = { domain, service, region, name, record: {} };
