@@ -87,8 +87,43 @@ export interface NamingArgs {
   location?: CloudInfraMetaInput['location'];
   /** Custom prefix; overrides the Pulumi-project-derived prefix. */
   prefix?: string;
+
+  /* --- Flat naming flags (preferred v2 surface) ----------------------------
+   *
+   * These map 1:1 onto the same `CloudInfraMeta` flags the deprecated
+   * {@link NamingMode} discriminator produced, so the resolved meta —
+   * and therefore `generateName` — is byte-identical (Frozen Contract F1).
+   *
+   * | flat flags                              | formula             | example     |
+   * | --------------------------------------- | ------------------- | ----------- |
+   * | (none)                                  | `prefix-name-loc`   | `p-api-au`  |
+   * | `omitLocation: true`                    | `prefix-name`       | `p-api`     |
+   * | `omitPrefix: true`                      | `name-loc`          | `api-au`    |
+   * | `omitPrefix: true, omitLocation: true`  | `name`              | `api`       |
+   * | `preview: '<token>'`                    | `prefix-name-hash7` | `p-api-1a2` |
+   *
+   * `preview` wins over the omit flags (matching meta.ts), exactly as the
+   * `{ preview }` mode did.
+   */
+
+  /** Omit the prefix segment from the generated name (`name-loc`). */
+  omitPrefix?: boolean;
+  /** Omit the location segment from the generated name (`prefix-name`). */
+  omitLocation?: boolean;
+  /**
+   * Render a preview name (`prefix-name-hash7(preview)`); wins over the omit
+   * flags, matching `meta.ts`.
+   */
+  preview?: string;
+
   /**
    * Which `generateName` formula to use. Defaults to `'conventional'`.
+   *
+   * @deprecated Use the flat {@link NamingArgs.omitPrefix} /
+   * {@link NamingArgs.omitLocation} / {@link NamingArgs.preview} flags instead.
+   * `naming` remains accepted as an alias and maps onto the identical meta
+   * flags (resolved meta byte-identical, F1). When a flat flag is also
+   * supplied, the flat flag takes precedence.
    * @see NamingMode
    */
   naming?: NamingMode;
@@ -169,7 +204,22 @@ export function resolveMeta(
   }
 
   const args = (argsOrConfig as NamingArgs | undefined) ?? {};
-  const flags = namingModeToFlags(args.naming);
+
+  // Start from the flags the (deprecated) `naming` discriminator maps to, then
+  // let the flat flags override. A `naming`-only caller therefore resolves to
+  // the IDENTICAL meta as before (F1); a flat-flag caller gets the same flags
+  // the equivalent mode would have set; a caller mixing both has the flat flag
+  // win. Only flags the caller actually set are forwarded — unset `omit*`
+  // booleans stay `undefined` (falsy, exactly as a v1 hand-built meta).
+  const modeFlags = namingModeToFlags(args.naming);
+  const flags: {
+    omitPrefix?: boolean;
+    omitLocation?: boolean;
+    preview?: string;
+  } = { ...modeFlags };
+  if (args.omitPrefix !== undefined) flags.omitPrefix = args.omitPrefix;
+  if (args.omitLocation !== undefined) flags.omitLocation = args.omitLocation;
+  if (args.preview !== undefined) flags.preview = args.preview;
 
   // Name-first (single string OR multi-name string[]). The `name` field rides
   // through unchanged — a `string[]` populates `meta.getNames()`/`getInputName`
@@ -196,7 +246,17 @@ export function resolveMeta(
  * the public config surface. They overlap only on `location` and are
  * deliberately disjoint in purpose.
  */
-const NAMING_ARG_KEYS = ['domain', 'location', 'prefix', 'naming'] as const;
+const NAMING_ARG_KEYS = [
+  'domain',
+  'location',
+  'prefix',
+  'naming',
+  // Flat naming flags (preferred v2 surface) — stripped alongside the legacy
+  // `naming` discriminator so neither leaks into the forwarded component config.
+  'omitPrefix',
+  'omitLocation',
+  'preview',
+] as const;
 
 /**
  * Result of normalising a name-first OR meta-first constructor argument pair
