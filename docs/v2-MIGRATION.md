@@ -19,36 +19,41 @@ about adopting the new ergonomics and is designed to be **zero-replace** — val
 | References | type-specific getters | `ref.get("name").field` (positional stack, domain optional) | Yes — old getters `@deprecated` |
 | Outputs | nested only | `getFlatOutputs()` (dual-emit; nested wire frozen) | Yes |
 | Resource model | mixed | every component is a `pulumi.ComponentResource` | n/a (aliases make it in-place) |
-| Bulk components | meta-first only | name-first `new CloudInfraBulkX(["a","b"], {domain, ...})` | Yes — meta-first `@deprecated` |
+| Bulk components | separate `CloudInfraBulkX` class | merged into the single class — `new CloudInfraX(["a","b"], {domain,...})`; `CloudInfraBulkX` kept as a `@deprecated` URN-preserving alias | Yes |
+| New services | hand-wire each component + output manager | `CloudInfraService` coordinator: declare `{domain,location}` once → `svc.bucket()/.account()/…` + `svc.outputs()` (no IAM on it) | n/a (new) |
 
 **Why it's non-destructive:** components became `ComponentResource`s with children nested under
 them, but each child carries a root-alias (`childOpts`/`nestedChildOpts`) back to its v1 URN, so an
 upgrade is an in-place update, not a replace.
 
-## 2. The four sharp edges (codemod foot-guns)
+## 2. Sharp edges (codemod foot-guns)
 
-A naive find-replace will break things. These are the cases that change a resource's NAME (→
-replace) or fail to compile:
+A naive find-replace will break things. These cases change a resource's NAME (→ replace) or fail to compile:
 
-1. **`gcpProject` → `project:`** — the v1 meta `gcpProject` field becomes the component config
-   `project:` field. There is no name-first equivalent of `gcpProject` on the naming args.
+1. **`location` foot-gun (the dangerous one).** Name-first FUSES naming-location and deploy-region into the
+   single `location` arg. A v1 consumer that set its deploy region via `config.location` while keeping the
+   *meta* location-less must **drop `location` when porting to name-first** — or the generated name gains a
+   location segment and the resource **renames + REPLACES**. Escape hatch: keep those call sites on the
+   `@deprecated` meta-first overload (byte-identical to v1).
 
-2. **`location` foot-gun (the dangerous one).** Name-first FUSES naming-location and deploy-region
-   into the single `location` arg. A v1 consumer that set its deploy region via `config.location`
-   while keeping the *meta* location-less must **drop `location` when porting to name-first** — or
-   the generated name gains a location segment and the resource **renames + REPLACES**. Escape
-   hatch: keep those call sites on the `@deprecated` meta-first overload (byte-identical to v1).
+2. **`gcpProject` → `project:`** — the v1 meta `gcpProject` field becomes the component config `project:` field.
 
-3. **Bulk name array order is URN-load-bearing for accounts.** `CloudInfraBulkAccount`'s component
-   node label is `inputNames.join('-') + '-accounts'` (insertion order, *not* sorted —
-   `CloudInfraBulkBucket` sorts its keys). When porting a bulk account to name-first, **preserve the
-   exact array order** of the original meta `name: [...]` or the component node URN changes. Child
-   resource URNs are keyed by input name and are unaffected either way. (The input-name keys also
-   embed into access-matrix IAM binding names — Trap 6 — so do not rename/re-key them.)
+3. **Config-field compile-breaks (latent bugs surfaced, not regressions).** The uniform config `Omit` means
+   subnet/connector/nat no longer accept `region`/`name`/`project` in config (they were silently ignored
+   before → now a TYPE error; remove them). And name-first `CloudInfraEntitlement` (pam) **cannot set the
+   GCP-API `location`** (type-incompatible with the naming `location`) — use the meta-first overload there.
+   NOTE: folder/pam/tag now DO have name-first overloads (no longer meta-first-only).
 
-4. **Three components are meta-first ONLY — do not convert.** `CloudInfraFolder`,
-   `CloudInfraEntitlement` (pam), and `CloudInfraTag` have no name-first overload (their sole
-   constructor takes a `CloudInfraMeta`). Leave them meta-first.
+4. **Subpath imports + exhaustive `exports`.** Org/advanced symbols' canonical home is
+   `@mutinex/cloud-infra/org` and `/advanced` (the root still re-exports them `@deprecated` for back-compat,
+   so existing root imports keep working). `package.json` `exports` is now **exhaustive** — only
+   `.`/`./org`/`./advanced` resolve; any deep import (`@mutinex/cloud-infra/dist/...`, `/meta`, …) hard-fails.
+
+5. **Bulk array order is URN-load-bearing for accounts.** The merged class's bulk (`string[]`) arity keeps
+   the frozen label asymmetry — account = `inputNames.join('-')+'-accounts'` (insertion order), bucket =
+   sorted keys. Preserve the original array order (and prefer keeping `new CloudInfraBulkX([...])` via the
+   `@deprecated` alias, which preserves URNs) or the component-node URN changes. Input-name keys embed into
+   access-matrix IAM binding names (Trap 6) — do not rename/re-key.
 
 ## 3. Provider pinning
 
@@ -63,7 +68,7 @@ version** — the gate result is only valid for the provider the apply actually 
 **preview/prerelease packages** off `v2` under a dedicated dist-tag (e.g. `next`/`preview`) so opted-in
 consumers auto-pick-up new builds. Migrate a **low-risk consumer first — the admin-app repo — as the
 canary**, gate it clean, then proceed to the org/monorepo stacks below. (TODO: a preview-publish CI
-workflow off `v2`; the package already builds CJS/ESM/DTS green with 450 tests.)
+workflow off `v2`; the package already builds CJS/ESM/DTS green with 762 tests.)
 
 Consumers (in suggested order — simplest/most-isolated first, each fully gated before the next):
 
