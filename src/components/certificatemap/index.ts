@@ -13,7 +13,7 @@ import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 import { resourceNamingConfig } from '../../config';
@@ -141,17 +141,10 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
     // certificate config passed straight through (consumed UNCHANGED below —
     // every child name/suffix, the sanitizer and deleteBeforeReplace/dependsOn
     // are derived from it).
-    let meta: CloudInfraMeta;
-    let config: CloudInfraCertificateMapConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraCertificateMapArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraCertificateMapConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraCertificateMapConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     // Validate + resolve the generated NAME (unchanged, F1) before super. The
     // child suffix conventions (`-domain`/`-cert.name`/`-hostname`, sanitized)
@@ -291,6 +284,9 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
       domain: domain,
       project: this.config.project ?? this.meta.getGcpProject(),
       ...this.getLocationConfig(),
+      // Caller labels (if any) ride through withLabels' merge below; undefined
+      // when not supplied → org-labels-only, identical to prior behaviour.
+      labels: this.config.labels,
     };
 
     // certificatemanager.DnsAuthorization HAS a `labels` input → merge the org
@@ -386,6 +382,7 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
       },
       project: this.config.project ?? this.meta.getGcpProject(),
       ...this.getLocationConfig(),
+      labels: this.config.labels,
     };
 
     // certificatemanager.Certificate HAS a `labels` input → merge org labels
@@ -431,6 +428,7 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
     // back to its old root URN. PRESERVE the existing deleteBeforeReplace.
     const certificateMapArgs: gcp.certificatemanager.CertificateMapArgs = {
       project: this.config.project ?? this.meta.getGcpProject(),
+      labels: this.config.labels,
     };
     this.certificateMap = new gcp.certificatemanager.CertificateMap(
       this.resourceName,
@@ -496,6 +494,7 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
       certificates: [certificate.id],
       hostname: hostname,
       project: this.config.project ?? this.meta.getGcpProject(),
+      labels: this.config.labels,
     };
     const entry = new gcp.certificatemanager.CertificateMapEntry(
       entryName,

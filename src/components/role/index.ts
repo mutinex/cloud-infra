@@ -6,7 +6,7 @@ import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -32,7 +32,22 @@ export type CloudInfraProjectRoleConfig = Omit<
   gcp.projects.IAMCustomRoleArgs,
   'project' | 'roleId' | 'permissions'
 > & {
+  /**
+   * GCP project the custom role is created in. Canonical project field (v2
+   * uniform `project` surface). Defaults to `meta.getGcpProject()` when omitted.
+   */
+  project?: pulumi.Input<string>;
+  /**
+   * @deprecated Use `project`. Retained as an alias that resolves to the SAME
+   * project value (and the same resource). `project` wins if both are set.
+   */
   projectId?: pulumi.Input<string>;
+  /**
+   * @deprecated Use `project`. Alias for symmetry with `CloudInfraMeta`'s
+   * `gcpProject`; resolves to the SAME project value. `project`/`projectId` win
+   * over this if set.
+   */
+  gcpProject?: pulumi.Input<string>;
   permissions?: string[];
   excluded?: string[];
   roles?: Array<string | CloudInfraRole>;
@@ -134,21 +149,8 @@ export class CloudInfraRole extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // role config passed straight through.
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraRoleConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraRoleArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      // `CloudInfraRoleConfig` is a discriminated union; the rest-spread of
-      // `NamingArgs & (Project | Org)` loses the union narrowing, so a cast is
-      // needed. It is sound — the four naming keys are disjoint from both union
-      // members, so removing them leaves a structurally valid role config.
-      cloudInfraConfig = rest as CloudInfraRoleConfig;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraRoleConfig;
-    }
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraRoleConfig>(nameOrMeta, argsOrConfig);
 
     const name = resolveRoleName(meta);
 
@@ -178,11 +180,24 @@ export class CloudInfraRole extends CloudInfraComponent {
       cloudInfraConfig.orgId !== undefined &&
       cloudInfraConfig.orgId !== '';
 
+    // Resolve the project from the canonical `project` field, falling back to
+    // the `@deprecated` `projectId` / `gcpProject` aliases, then to the meta
+    // project. Precedence: project > projectId > gcpProject > meta. Existing
+    // `projectId`-only callers resolve to the IDENTICAL value (byte-identical
+    // resource); the new `project` field is purely additive.
+    const projectConfig = cloudInfraConfig as {
+      project?: pulumi.Input<string>;
+      projectId?: pulumi.Input<string>;
+      gcpProject?: pulumi.Input<string>;
+    };
+    const explicitProject =
+      ('project' in projectConfig ? projectConfig.project : undefined) ??
+      ('projectId' in projectConfig ? projectConfig.projectId : undefined) ??
+      ('gcpProject' in projectConfig ? projectConfig.gcpProject : undefined);
+
     const projectId: pulumi.Input<string> = isOrgRole
       ? undefined!
-      : (('projectId' in cloudInfraConfig
-          ? cloudInfraConfig.projectId
-          : undefined) ?? meta.getGcpProject());
+      : (explicitProject ?? meta.getGcpProject());
 
     const orgIdResolved =
       isOrgRole && 'orgId' in cloudInfraConfig

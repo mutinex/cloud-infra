@@ -18,8 +18,9 @@ import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
+  type ComponentConfig,
 } from '../../core/component';
 
 /** Pulumi type token for the NAT component. */
@@ -40,7 +41,13 @@ export const CloudInfraNatConfigSchema = z
   .passthrough();
 
 export interface CloudInfraNatConfig
-  extends Omit<gcp.compute.RouterNatArgs, 'router'> {
+  extends ComponentConfig<Omit<gcp.compute.RouterNatArgs, 'router'>> {
+  // The nested `router` is intentionally left as the RAW `gcp.compute.RouterArgs`
+  // (NOT wrapped in ComponentConfig): `createRouter` derives the router's name
+  // from `resourceName` and overwrites `region` from meta, so a caller-supplied
+  // `router.name`/`router.region`/`router.project` is ignored. Tightening that
+  // nested arm is a deliberate follow-up; the top-level surface is what this
+  // task tightened.
   router: gcp.compute.RouterArgs;
 }
 
@@ -140,17 +147,10 @@ export class CloudInfraNat extends CloudInfraComponent {
     // path, split the naming metadata out of the args; everything else is the
     // NAT config passed straight through (parsed + consumed UNCHANGED below by
     // the Router, RouterNat and Route).
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraNatConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...config } =
-        argsOrConfig as CloudInfraNatArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      cloudInfraConfig = config as CloudInfraNatConfig;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraNatConfig;
-    }
+    const { meta, config: cloudInfraConfig } = splitMetaArgs<CloudInfraNatConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
 

@@ -8,7 +8,7 @@ import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -117,17 +117,10 @@ export class CloudInfraComputeInstance extends CloudInfraComponent {
     // instance config passed straight through. ONLY meta-acquisition is
     // rerouted here — the zonal-name derivation below is byte-unchanged and
     // runs on the resolved meta exactly as before.
-    let meta: CloudInfraMeta;
-    let config: CloudInfraComputeInstanceConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraComputeInstanceArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest as CloudInfraComputeInstanceConfig;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraComputeInstanceConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraComputeInstanceConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     // Determine the zone to use - prefer explicit config.zone, then meta zone,
     // then default. This zonal-name logic (with the implicit `-a` zone default)

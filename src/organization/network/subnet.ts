@@ -7,8 +7,9 @@ import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
+  type ComponentConfig,
 } from '../../core/component';
 
 /**
@@ -22,16 +23,26 @@ import {
 export const SUBNET_TYPE = 'cloud-infra:network:CloudInfraSubnet';
 
 /**
+ * User-facing config for `CloudInfraSubnet`: the raw `gcp.compute.SubnetworkArgs`
+ * with the component-managed fields removed (`name` → generated name, `region` →
+ * `meta.getRegion()`, etc.) via {@link ComponentConfig}. TYPE-ONLY tightening —
+ * the runtime spread (`{ region, ...config }`) and emitted resource are
+ * unchanged; this only stops callers from passing meta-managed fields the
+ * component derives itself.
+ */
+export type CloudInfraSubnetConfig = ComponentConfig<gcp.compute.SubnetworkArgs>;
+
+/**
  * Name-first construction args for `CloudInfraSubnet` (v2 DX).
  *
  * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
- * `prefix` / `naming`) together with the Pulumi subnetwork args
- * (`gcp.compute.SubnetworkArgs`) into a single args object. The naming fields
+ * `prefix` / `naming`) together with the subnetwork config
+ * ({@link CloudInfraSubnetConfig}) into a single args object. The naming fields
  * are resolved into a `CloudInfraMeta` internally (identical `generateName`
  * output, Frozen Contract F1); the remaining fields are passed straight through
  * as the subnetwork config exactly as the meta-first path.
  */
-export type CloudInfraSubnetArgs = NamingArgs & gcp.compute.SubnetworkArgs;
+export type CloudInfraSubnetArgs = NamingArgs & CloudInfraSubnetConfig;
 
 /**
  * Creates a Google Cloud subnetwork with a name and region derived from
@@ -66,7 +77,7 @@ export type CloudInfraSubnetArgs = NamingArgs & gcp.compute.SubnetworkArgs;
  */
 export class CloudInfraSubnet extends CloudInfraComponent {
   private readonly meta: CloudInfraMeta;
-  private readonly config: gcp.compute.SubnetworkArgs;
+  private readonly config: CloudInfraSubnetConfig;
   private readonly subnet: gcp.compute.Subnetwork;
   private readonly inputName: string;
   private readonly resourceName: string;
@@ -104,29 +115,22 @@ export class CloudInfraSubnet extends CloudInfraComponent {
    */
   constructor(
     meta: CloudInfraMeta,
-    config: gcp.compute.SubnetworkArgs,
+    config: CloudInfraSubnetConfig,
     opts?: pulumi.ComponentResourceOptions
   );
   constructor(
     nameOrMeta: string | CloudInfraMeta,
-    argsOrConfig: CloudInfraSubnetArgs | gcp.compute.SubnetworkArgs,
+    argsOrConfig: CloudInfraSubnetArgs | CloudInfraSubnetConfig,
     opts?: pulumi.ComponentResourceOptions
   ) {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // subnetwork config passed straight through (consumed UNCHANGED below by the
     // Subnetwork).
-    let meta: CloudInfraMeta;
-    let config: gcp.compute.SubnetworkArgs;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraSubnetArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest as gcp.compute.SubnetworkArgs;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as gcp.compute.SubnetworkArgs;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraSubnetConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
 
@@ -167,7 +171,7 @@ export class CloudInfraSubnet extends CloudInfraComponent {
   }
 
   private createSubnet(
-    config: gcp.compute.SubnetworkArgs
+    config: CloudInfraSubnetConfig
   ): gcp.compute.Subnetwork {
     /*
      * v1 created the Subnetwork at the stack root (it was passed the caller's

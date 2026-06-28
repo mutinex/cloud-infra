@@ -10,7 +10,7 @@ import { CloudInfraOutput } from '../../core/output';
 import { ValidationError } from '../../core/errors';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -87,17 +87,10 @@ export class CloudInfraDatabase extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // database config passed straight through.
-    let meta: CloudInfraMeta;
-    let config: CloudInfraDatabaseConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraDatabaseArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraDatabaseConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraDatabaseConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
 

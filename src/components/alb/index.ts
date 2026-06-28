@@ -45,7 +45,7 @@ import { PulumiTypeDetector } from '../../core/pulumi-type-detector';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -205,17 +205,10 @@ export class CloudInfraAlb extends CloudInfraComponent {
     // else is the ALB config passed straight through (consumed UNCHANGED below
     // by all child creation + validation). Only meta-acquisition is rerouted —
     // every child's name/type-token/parent/alias/labels/opts is unchanged (F2).
-    let meta: CloudInfraMeta;
-    let config: CloudInfraAlbConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraAlbArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest as CloudInfraAlbConfig;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraAlbConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraAlbConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     // Register the component node FIRST (super must precede any `this` use).
     // `meta.getName()`/`getDomain()` do not touch `this`, so they are safe

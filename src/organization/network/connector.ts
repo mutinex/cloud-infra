@@ -15,8 +15,9 @@ import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
+  type ComponentConfig,
 } from '../../core/component';
 
 /** Pulumi type token for the VPC Access Connector component. */
@@ -31,16 +32,28 @@ export const CloudInfraConnectorConfigSchema = z
   .passthrough();
 
 /**
+ * User-facing config for `CloudInfraConnector`: the raw
+ * `gcp.vpcaccess.ConnectorArgs` with the component-managed fields removed
+ * (`name` → generated name, `region` → `meta.getRegion()`, etc.) via
+ * {@link ComponentConfig}. TYPE-ONLY tightening — the Zod-defaulted parse and the
+ * runtime spread (`{ region, ...config }`) and emitted resource are unchanged;
+ * this only stops callers from passing meta-managed fields the component derives
+ * itself.
+ */
+export type CloudInfraConnectorConfig =
+  ComponentConfig<gcp.vpcaccess.ConnectorArgs>;
+
+/**
  * Name-first construction args for `CloudInfraConnector` (v2 DX).
  *
  * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
- * `prefix` / `naming`) together with the Pulumi connector args
- * (`gcp.vpcaccess.ConnectorArgs`) into a single args object. The naming fields
- * are resolved into a `CloudInfraMeta` internally (identical `generateName`
- * output, Frozen Contract F1); the remaining fields are passed straight through
- * as the connector config exactly as the meta-first path.
+ * `prefix` / `naming`) together with the connector config
+ * ({@link CloudInfraConnectorConfig}) into a single args object. The naming
+ * fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the connector config exactly as the meta-first path.
  */
-export type CloudInfraConnectorArgs = NamingArgs & gcp.vpcaccess.ConnectorArgs;
+export type CloudInfraConnectorArgs = NamingArgs & CloudInfraConnectorConfig;
 
 /**
  * Creates a Google Cloud VPC Access Connector with a name and region derived
@@ -101,29 +114,22 @@ export class CloudInfraConnector extends CloudInfraComponent {
    */
   constructor(
     meta: CloudInfraMeta,
-    config: gcp.vpcaccess.ConnectorArgs,
+    config: CloudInfraConnectorConfig,
     opts?: pulumi.ComponentResourceOptions
   );
   constructor(
     nameOrMeta: string | CloudInfraMeta,
-    argsOrConfig: CloudInfraConnectorArgs | gcp.vpcaccess.ConnectorArgs,
+    argsOrConfig: CloudInfraConnectorArgs | CloudInfraConnectorConfig,
     opts?: pulumi.ComponentResourceOptions
   ) {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // connector config passed straight through (parsed + consumed UNCHANGED
     // below by the Connector). `opts` is forwarded unchanged.
-    let meta: CloudInfraMeta;
-    let config: gcp.vpcaccess.ConnectorArgs;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraConnectorArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest as gcp.vpcaccess.ConnectorArgs;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as gcp.vpcaccess.ConnectorArgs;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraConnectorConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
     super(

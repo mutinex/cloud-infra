@@ -7,7 +7,7 @@ import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -124,17 +124,12 @@ export class CloudInfraCloudRunService extends CloudInfraComponent {
     // path, split the naming metadata out of the args; everything else is the
     // service config passed straight through (consumed UNCHANGED below by both
     // the Service and the NEG).
-    let meta: CloudInfraMeta;
-    let config: CloudInfraCloudRunServiceConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraCloudRunServiceArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraCloudRunServiceConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraCloudRunServiceConfig>(
+      nameOrMeta,
+      argsOrConfig as
+        | (NamingArgs & CloudInfraCloudRunServiceConfig)
+        | CloudInfraCloudRunServiceConfig
+    );
 
     const resourceName = meta.getName();
 

@@ -28,7 +28,7 @@ import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -100,17 +100,13 @@ export class CloudInfraRepository extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // repository config passed straight through.
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraRepositoryConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraRepositoryArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      cloudInfraConfig = rest;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraRepositoryConfig;
-    }
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraRepositoryConfig>(
+        nameOrMeta,
+        argsOrConfig as
+          | (NamingArgs & CloudInfraRepositoryConfig)
+          | CloudInfraRepositoryConfig
+      );
 
     const resourceName = meta.getName();
 

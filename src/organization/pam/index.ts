@@ -7,7 +7,11 @@ import { CloudInfraOutput } from '../../core/output';
 import { CloudInfraRole } from '../../components/role';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  splitMetaArgs,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the PAM Entitlement component. */
 export const ENTITLEMENT_TYPE = 'cloud-infra:pam:CloudInfraEntitlement';
@@ -69,6 +73,35 @@ export type CloudInfraEntitlementConfig = Partial<
 };
 
 /**
+ * Name-first construction args for `CloudInfraEntitlement` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the entitlement config
+ * ({@link CloudInfraEntitlementConfig}) into a single args object. The naming
+ * fields are resolved into a `CloudInfraMeta` internally (identical
+ * `generateName` output, Frozen Contract F1); the remaining fields are passed
+ * straight through as the entitlement config exactly as the meta-first path.
+ *
+ * NB on `location`: it appears in BOTH {@link NamingArgs} (a naming input, typed
+ * `string | string[]`) and {@link CloudInfraEntitlementConfig} (the entitlement's
+ * GCP API location, typed `pulumi.Input<string>`). These types are incompatible,
+ * so a bare intersection is unsatisfiable. The name-first split
+ * ({@link splitMetaArgs}) ALWAYS routes `location` to `resolveMeta` (the naming
+ * path), exactly as every other name-first component does, so `location` is
+ * surfaced here ONLY as the {@link NamingArgs} naming input — the config's own
+ * `location` is `Omit`ted from the name-first surface to avoid the type clash.
+ *
+ * Consequence (RESIDUAL RISK — see WS-C report): a NAME-FIRST caller cannot set
+ * the entitlement's GCP API `location` directly; it falls back to the
+ * domain-derived default (`'global'` for the `gl` domain), which is the common
+ * case. A caller needing a non-default API location must use the (deprecated)
+ * META-FIRST overload, whose behaviour is unchanged. The meta-first path keeps
+ * the full `CloudInfraEntitlementConfig` (with its `location`) intact.
+ */
+export type CloudInfraEntitlementArgs = NamingArgs &
+  Omit<CloudInfraEntitlementConfig, 'location'>;
+
+/**
  * CloudInfra wrapper around `gcp.privilegedaccessmanager.Entitlement`.
  *
  * The component enforces the following opinionated defaults:
@@ -113,11 +146,42 @@ export class CloudInfraEntitlement extends CloudInfraComponent {
    *   {@link transformApprovalWorkflow}.
    * • `requesterJustificationConfig` defaults to `{ unstructured: {} }`.
    */
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the entitlement config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args?: CloudInfraEntitlementArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraEntitlement(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   *
+   * @param meta   Instance of {@link CloudInfraMeta} used for naming/location.
+   * @param cloudInfraConfig  Partial Pulumi args + optional extras. All fields
+   *                       are optional – sensible defaults will be inferred.
+   */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraEntitlementConfig = {},
+    cloudInfraConfig?: CloudInfraEntitlementConfig,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraEntitlementArgs | CloudInfraEntitlementConfig = {},
     opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // entitlement config passed straight through (consumed UNCHANGED below).
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraEntitlementConfig>(nameOrMeta, argsOrConfig);
+
     const resourceName = meta.getName();
     super(
       ENTITLEMENT_TYPE,

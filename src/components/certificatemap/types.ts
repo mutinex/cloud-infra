@@ -73,4 +73,15 @@ export interface CloudInfraCertificateMapConfig {
    * If not provided, uses the project from CloudInfraMeta
    */
   project?: pulumi.Input<string>;
+
+  /**
+   * Optional resource labels. Merged on top of the uniform org label floor
+   * (`{ ...orgLabels, ...labels }`) into every label-supporting child
+   * (DnsAuthorization, Certificate, CertificateMap, CertificateMapEntry) via the
+   * standard `withLabels` mechanism — caller labels win over the org floor.
+   * ADDITIVE: when omitted, behaviour is unchanged (org labels only). The
+   * label-UNSUPPORTED Cloudflare DNS records are never passed through
+   * `withLabels` and are unaffected.
+   */
+  labels?: Record<string, string>;
 }

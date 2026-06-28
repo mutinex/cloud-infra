@@ -184,3 +184,92 @@ export function resolveMeta(
 
   return new CloudInfraMeta(metaInput);
 }
+
+/**
+ * The fixed set of {@link NamingArgs} keys that a name-first component splits
+ * out of its combined args object before forwarding the remainder as the
+ * component config. Centralised here so the {@link splitMetaArgs} helper and any
+ * future consumer share ONE source of truth.
+ *
+ * Distinct from `MetaManagedField` in `config.ts`: this is the RUNTIME set
+ * stripped off and routed to the meta; that is the TYPE-LEVEL set removed from
+ * the public config surface. They overlap only on `location` and are
+ * deliberately disjoint in purpose.
+ */
+const NAMING_ARG_KEYS = ['domain', 'location', 'prefix', 'naming'] as const;
+
+/**
+ * Result of normalising a name-first OR meta-first constructor argument pair
+ * into the uniform `(meta, config)` shape every name-first component uses.
+ *
+ * @typeParam TConfig The component's own (Pulumi-args) config type.
+ */
+export interface MetaArgsSplit<TConfig> {
+  /** The resolved {@link CloudInfraMeta} (byte-identical between both paths). */
+  meta: CloudInfraMeta;
+  /**
+   * The component config: for the name-first path this is the combined args with
+   * the {@link NamingArgs} naming fields removed; for the meta-first path it is
+   * the caller-supplied config unchanged.
+   */
+  config: TConfig;
+}
+
+/**
+ * Hoisted, single-source implementation of the meta/name-first split that was
+ * previously copy-pasted into every name-first component constructor.
+ *
+ * Behaviour is byte-identical to the inlined block it replaces:
+ *
+ * - **Name-first** (`nameOrMeta: string`): destructures `{ domain, location,
+ *   prefix, naming, ...rest }` out of the combined args and resolves the naming
+ *   fields into a {@link CloudInfraMeta} via {@link resolveMeta} (same F1
+ *   `generateName` output). `rest` becomes `config`.
+ * - **Meta-first** (`nameOrMeta: CloudInfraMeta`): returns the meta unchanged and
+ *   the caller-supplied `argsOrConfig` as `config` (the legacy/deprecated path).
+ *
+ * The naming-field destructure uses the centralised {@link NAMING_ARG_KEYS} set,
+ * so all name-first components strip EXACTLY the same keys.
+ *
+ * @typeParam TConfig The component's own config type (the non-naming remainder).
+ * @param nameOrMeta   The first constructor arg: a name (name-first) or a
+ *                     {@link CloudInfraMeta} (meta-first).
+ * @param argsOrConfig The second constructor arg: the combined name-first args
+ *                     (`NamingArgs` folded over the config, with any naming-named
+ *                     config keys yielding to the {@link NamingArgs} typing) OR a
+ *                     bare meta-first `TConfig`.
+ *
+ * The name-first arm of the parameter type is `NamingArgs &
+ * Omit<TConfig, keyof NamingArgs>` rather than a bare `NamingArgs & TConfig`:
+ * dropping any `TConfig` keys that collide with {@link NamingArgs} (e.g. a
+ * component whose config independently declares `location` with a DIFFERENT type)
+ * keeps the intersection satisfiable. Runtime behaviour is unchanged — the same
+ * {@link NAMING_ARG_KEYS} are stripped regardless of the static type.
+ */
+export function splitMetaArgs<TConfig>(
+  nameOrMeta: string | CloudInfraMeta,
+  argsOrConfig: (NamingArgs & Omit<TConfig, keyof NamingArgs>) | TConfig
+): MetaArgsSplit<TConfig> {
+  if (typeof nameOrMeta === 'string') {
+    const combined = { ...(argsOrConfig as NamingArgs & TConfig) } as Record<
+      string,
+      unknown
+    >;
+    const namingArgs: NamingArgs = {};
+    for (const key of NAMING_ARG_KEYS) {
+      if (key in combined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (namingArgs as any)[key] = combined[key];
+        delete combined[key];
+      }
+    }
+    return {
+      meta: resolveMeta(nameOrMeta, namingArgs),
+      config: combined as TConfig,
+    };
+  }
+  return {
+    meta: nameOrMeta,
+    config: argsOrConfig as TConfig,
+  };
+}

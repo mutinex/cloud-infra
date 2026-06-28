@@ -6,7 +6,11 @@ import { CloudInfraMeta } from '../../core/meta';
 import { CloudInfraOutput } from '../../core/output';
 import { gcpConfig } from '../../config';
 import { CloudInfraLogger } from '../../core/logging';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  splitMetaArgs,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Tag component. */
 export const TAG_TYPE = 'cloud-infra:tag:CloudInfraTag';
@@ -18,6 +22,20 @@ export type CloudInfraTagConfig = Omit<
   parent?: pulumi.Input<string>;
   values: { shortName: string; description: string }[];
 };
+
+/**
+ * Name-first construction args for `CloudInfraTag` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the tag config
+ * ({@link CloudInfraTagConfig}) into a single args object. The naming fields are
+ * resolved into a `CloudInfraMeta` internally (identical `generateName` output,
+ * Frozen Contract F1); the remaining fields are passed straight through as the
+ * tag config exactly as the meta-first path. The config is REQUIRED (it carries
+ * the mandatory `values`), so unlike most components this args object is a
+ * required constructor parameter.
+ */
+export type CloudInfraTagArgs = NamingArgs & CloudInfraTagConfig;
 
 export const TagConfigSchema = z
   .object({
@@ -39,11 +57,41 @@ export class CloudInfraTag extends CloudInfraComponent {
     shortName: string;
   }[] = [];
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the tag config are folded
+   * into a single args object; the name is resolved into a `CloudInfraMeta`
+   * internally with byte-identical naming (Frozen Contract F1). `args` is
+   * REQUIRED — it carries the mandatory `values`.
+   */
+  constructor(
+    name: string,
+    args: CloudInfraTagArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraTag(name, args, opts)`. Retained for backward compatibility;
+   * produces identical resources.
+   */
   constructor(
     meta: CloudInfraMeta,
     config: CloudInfraTagConfig,
     opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraTagArgs | CloudInfraTagConfig,
+    opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // tag config passed straight through (validated + consumed UNCHANGED below).
+    const { meta, config } = splitMetaArgs<CloudInfraTagConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
+
     const resourceNameForSuper = meta.getName();
     super(
       TAG_TYPE,

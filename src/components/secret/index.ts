@@ -10,7 +10,7 @@ import { ValidationError } from '../../core/errors';
 import { deriveRegion } from '../../core/helpers';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -106,17 +106,10 @@ export class CloudInfraSecretVersion extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // secret-version config passed straight through.
-    let meta: CloudInfraMeta;
-    let config: CloudInfraSecretVersionConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraSecretVersionArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraSecretVersionConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraSecretVersionConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
 
