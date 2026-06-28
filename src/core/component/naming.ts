@@ -281,19 +281,24 @@ export interface MetaArgsSplit<TConfig> {
  *
  * Behaviour is byte-identical to the inlined block it replaces:
  *
- * - **Name-first** (`nameOrMeta: string`): destructures `{ domain, location,
- *   prefix, naming, ...rest }` out of the combined args and resolves the naming
- *   fields into a {@link CloudInfraMeta} via {@link resolveMeta} (same F1
- *   `generateName` output). `rest` becomes `config`.
+ * - **Name-first** (`nameOrMeta: string` — single — or `string[]` — multi/bulk):
+ *   destructures the {@link NAMING_ARG_KEYS} out of the combined args and resolves
+ *   the naming fields into a {@link CloudInfraMeta} via {@link resolveMeta} (same
+ *   F1 `generateName` output). `rest` becomes `config`. The `string[]` arity feeds
+ *   `resolveMeta(names, …)` so a bulk component's hand-inlined destructure is
+ *   replaced by the SAME single source of truth as the single arity.
  * - **Meta-first** (`nameOrMeta: CloudInfraMeta`): returns the meta unchanged and
  *   the caller-supplied `argsOrConfig` as `config` (the legacy/deprecated path).
  *
  * The naming-field destructure uses the centralised {@link NAMING_ARG_KEYS} set,
- * so all name-first components strip EXACTLY the same keys.
+ * so all name-first components strip EXACTLY the same keys — including the flat
+ * `omitPrefix`/`omitLocation`/`preview` flags, which a hand-inlined
+ * `{ domain, location, prefix, naming, ...rest }` destructure would have LEAKED
+ * into the forwarded component config.
  *
  * @typeParam TConfig The component's own config type (the non-naming remainder).
- * @param nameOrMeta   The first constructor arg: a name (name-first) or a
- *                     {@link CloudInfraMeta} (meta-first).
+ * @param nameOrMeta   The first constructor arg: a single name (`string`), a set
+ *                     of names (`string[]`), or a {@link CloudInfraMeta}.
  * @param argsOrConfig The second constructor arg: the combined name-first args
  *                     (`NamingArgs` folded over the config, with any naming-named
  *                     config keys yielding to the {@link NamingArgs} typing) OR a
@@ -307,10 +312,10 @@ export interface MetaArgsSplit<TConfig> {
  * {@link NAMING_ARG_KEYS} are stripped regardless of the static type.
  */
 export function splitMetaArgs<TConfig>(
-  nameOrMeta: string | CloudInfraMeta,
+  nameOrMeta: string | string[] | CloudInfraMeta,
   argsOrConfig: (NamingArgs & Omit<TConfig, keyof NamingArgs>) | TConfig
 ): MetaArgsSplit<TConfig> {
-  if (typeof nameOrMeta === 'string') {
+  if (typeof nameOrMeta === 'string' || Array.isArray(nameOrMeta)) {
     const combined = { ...(argsOrConfig as NamingArgs & TConfig) } as Record<
       string,
       unknown
@@ -323,8 +328,13 @@ export function splitMetaArgs<TConfig>(
         delete combined[key];
       }
     }
+    // Narrow to a concrete arity so each resolveMeta overload matches. Both
+    // arms strip the identical NAMING_ARG_KEYS above; only the name shape differs.
+    const meta = Array.isArray(nameOrMeta)
+      ? resolveMeta(nameOrMeta, namingArgs)
+      : resolveMeta(nameOrMeta, namingArgs);
     return {
-      meta: resolveMeta(nameOrMeta, namingArgs),
+      meta,
       config: combined as TConfig,
     };
   }

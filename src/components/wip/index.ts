@@ -29,7 +29,6 @@ import { ValidationError } from '../../core/errors';
 import { gcpConfig } from '../../config';
 import {
   CloudInfraComponent,
-  resolveMeta,
   splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
@@ -244,20 +243,15 @@ export class CloudInfraWIPProvider extends CloudInfraComponent {
     argsOrConfig: CloudInfraWIPProviderArgs | CloudInfraWIPProviderConfig,
     opts?: pulumi.ComponentResourceOptions
   ) {
-    // Normalize both overloads to a (meta, config) pair. For the name-first
-    // path, split the naming metadata out of the args; everything else is the
-    // provider config passed straight through.
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraWIPProviderConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraWIPProviderArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      cloudInfraConfig = rest;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraWIPProviderConfig;
-    }
+    // Normalize both overloads to a (meta, config) pair via the
+    // single-source-of-truth splitMetaArgs helper (same as CloudInfraWIP),
+    // replacing the hand-inlined `{ domain, location, prefix, naming, ...rest }`
+    // destructure. splitMetaArgs strips the centralised NAMING_ARG_KEYS — which
+    // ALSO covers the flat omitPrefix/omitLocation/preview flags the inline
+    // destructure leaked into the provider config — and passes a meta-first
+    // CloudInfraMeta through unchanged.
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraWIPProviderConfig>(nameOrMeta, argsOrConfig);
 
     const resourceNameForSuper = meta.getName();
     super(

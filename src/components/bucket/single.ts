@@ -10,7 +10,7 @@ import {
   CloudInfraBucketBulkArgs,
   buildBucketArgs,
 } from './common';
-import { CloudInfraComponent, resolveMeta } from '../../core/component';
+import { CloudInfraComponent, splitMetaArgs } from '../../core/component';
 
 /** Pulumi type token for the single-bucket component. */
 export const BUCKET_TYPE = 'cloud-infra:bucket:Bucket';
@@ -120,44 +120,17 @@ export class CloudInfraBucket extends CloudInfraComponent {
     opts?: pulumi.ComponentResourceOptions
   ) {
     // Resolve the (name|names|meta, args) pair into a CloudInfraMeta + the
-    // component config (naming fields stripped for the name-first paths). The
-    // naming-field strip is byte-identical across single and array inputs.
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraBucketConfig & {
-      custom?: Record<string, CloudInfraBucketConfig>;
-    };
-    if (Array.isArray(nameOrNamesOrMeta)) {
-      const { domain, location, prefix, naming, omitPrefix, omitLocation, preview, ...rest } =
-        argsOrConfig as CloudInfraBucketBulkArgs;
-      meta = resolveMeta(nameOrNamesOrMeta, {
-        domain,
-        location,
-        prefix,
-        naming,
-        omitPrefix,
-        omitLocation,
-        preview,
-      });
-      cloudInfraConfig = rest;
-    } else if (nameOrNamesOrMeta instanceof CloudInfraMeta) {
-      meta = nameOrNamesOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraBucketConfig & {
+    // component config via the single-source-of-truth splitMetaArgs helper. It
+    // strips the centralised NAMING_ARG_KEYS (domain/location/prefix/naming +
+    // the flat omitPrefix/omitLocation/preview flags) for both the single
+    // (`string`) and bulk (`string[]`) name-first arities, and passes a meta-first
+    // CloudInfraMeta through unchanged. Resolved meta is byte-identical to the
+    // previously hand-inlined destructure across single and array inputs.
+    const { meta, config: cloudInfraConfig } = splitMetaArgs<
+      CloudInfraBucketConfig & {
         custom?: Record<string, CloudInfraBucketConfig>;
-      };
-    } else {
-      const { domain, location, prefix, naming, omitPrefix, omitLocation, preview, ...rest } =
-        argsOrConfig as CloudInfraBucketArgs;
-      meta = resolveMeta(nameOrNamesOrMeta, {
-        domain,
-        location,
-        prefix,
-        naming,
-        omitPrefix,
-        omitLocation,
-        preview,
-      });
-      cloudInfraConfig = rest;
-    }
+      }
+    >(nameOrNamesOrMeta, argsOrConfig);
 
     // Arity is decided by the resolved input name, NOT by the surface overload:
     // a meta-first caller with an array name selects bulk just as the array

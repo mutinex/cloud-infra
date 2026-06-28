@@ -10,7 +10,7 @@ import {
   CloudInfraAccountPulumiConfig,
   CloudInfraAccountBase,
 } from './common';
-import { resolveMeta, type NamingArgs } from '../../core/component';
+import { splitMetaArgs, type NamingArgs } from '../../core/component';
 
 /**
  * A wrapper around Google Cloud Service-Account(s) that enforces CloudInfra
@@ -148,43 +148,17 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
     opts?: pulumi.ComponentResourceOptions
   ) {
     // Resolve the (name|names|meta, args) pair into a CloudInfraMeta + the
-    // component config (naming fields stripped for the name-first paths).
-    let meta: CloudInfraMeta;
-    let config: CloudInfraAccountConfig & {
-      custom?: Record<string, CloudInfraAccountConfig>;
-    };
-    if (Array.isArray(nameOrNamesOrMeta)) {
-      const { domain, location, prefix, naming, omitPrefix, omitLocation, preview, ...rest } =
-        argsOrConfig as CloudInfraAccountBulkArgs;
-      meta = resolveMeta(nameOrNamesOrMeta, {
-        domain,
-        location,
-        prefix,
-        naming,
-        omitPrefix,
-        omitLocation,
-        preview,
-      });
-      config = rest;
-    } else if (nameOrNamesOrMeta instanceof CloudInfraMeta) {
-      meta = nameOrNamesOrMeta;
-      config = argsOrConfig as CloudInfraAccountConfig & {
+    // component config via the single-source-of-truth splitMetaArgs helper. It
+    // strips the centralised NAMING_ARG_KEYS (domain/location/prefix/naming +
+    // the flat omitPrefix/omitLocation/preview flags) for both the single
+    // (`string`) and bulk (`string[]`) name-first arities, and passes a meta-first
+    // CloudInfraMeta through unchanged. Resolved meta is byte-identical to the
+    // previously hand-inlined destructure.
+    const { meta, config } = splitMetaArgs<
+      CloudInfraAccountConfig & {
         custom?: Record<string, CloudInfraAccountConfig>;
-      };
-    } else {
-      const { domain, location, prefix, naming, omitPrefix, omitLocation, preview, ...rest } =
-        argsOrConfig as CloudInfraAccountArgs;
-      meta = resolveMeta(nameOrNamesOrMeta, {
-        domain,
-        location,
-        prefix,
-        naming,
-        omitPrefix,
-        omitLocation,
-        preview,
-      });
-      config = rest;
-    }
+      }
+    >(nameOrNamesOrMeta, argsOrConfig);
 
     // Arity is decided by the resolved input name, NOT by the surface overload.
     const inputName = meta.getInputName();
