@@ -1,0 +1,101 @@
+name: Cloud Infra v2 — Preview Publish
+
+# Publishes a prerelease of @mutinex/cloud-infra to the `next` dist-tag on every
+# push to the long-lived `v2` branch (and on manual dispatch from `v2`). Each run
+# produces a unique, traceable version `<PREVIEW_BASE>-next.<run_number>.g<short-sha>`
+# so it never collides and never moves the stable `latest` tag (a released 1.x holds
+# `latest`; prereleases are not promoted to it). Consumers opt in with
+# `yarn add @mutinex/cloud-infra@next`.
+#
+# This is PREVIEW plumbing only — it never touches `main`, never runs Pulumi, and
+# never affects the stable release channel. Test/typecheck/build all run in the same
+# job as publish, so the exact artifact that passed the gate is the one published.
+
+on:
+  push:
+    branches:
+      - v2
+  workflow_dispatch:
+
+# Least privilege by default; the publish job widens to packages: write below.
+permissions:
+  contents: read
+
+# Never interrupt an in-flight publish; let each push finish its own run. Versions
+# are unique per run (run_number), so serialized runs never collide.
+concurrency:
+  group: cloud-infra-preview
+  cancel-in-progress: false
+
+jobs:
+  preview-publish:
+    name: Test, build & publish preview
+    # Defense in depth: only ever publish from v2, even if triggers change or a
+    # manual dispatch is launched from another ref.
+    if: github.ref == 'refs/heads/v2'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        # Default shallow checkout (depth 1) is sufficient — we only read HEAD's
+        # short sha for the version string, no history/diff is needed.
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@mutinex'
+
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Quality gate: everything below must pass before we publish ---
+      - name: Type check
+        run: yarn tsc --noEmit
+
+      - name: Run tests
+        run: yarn test
+
+      - name: Build package
+        run: yarn build
+
+      # --- Publish ---
+      - name: Compute preview version
+        id: version
+        env:
+          # The semver base for the v2 preview channel. Bump here when the target
+          # release line changes (e.g. once 2.0.0 ships, move this to 2.1.0).
+          PREVIEW_BASE: '2.0.0'
+        run: |
+          set -euo pipefail
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          PREVIEW_VERSION="${PREVIEW_BASE}-next.${{ github.run_number }}.g${SHORT_SHA}"
+          echo "version=${PREVIEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Computed preview version: ${PREVIEW_VERSION}"
+
+      - name: Set package version (in-tree only, no commit/tag)
+        # npm pkg set is single-purpose: it rewrites package.json#version with no git
+        # side effects and no version/preversion lifecycle scripts (unlike npm version).
+        run: npm pkg set version="${{ steps.version.outputs.version }}"
+
+      - name: 'Publish preview (dist-tag: next)'
+        run: yarn npm publish --tag next
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Job summary
+        run: |
+          {
+            echo "### Published preview \`${{ steps.version.outputs.version }}\`"
+            echo ""
+            echo "- dist-tag: \`next\` (stable \`latest\` is untouched)"
+            echo "- Install latest preview: \`yarn add @mutinex/cloud-infra@next\`"
+            echo "- Pin exactly: \`@mutinex/cloud-infra@${{ steps.version.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
