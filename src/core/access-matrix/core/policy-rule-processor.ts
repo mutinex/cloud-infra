@@ -336,16 +336,20 @@ export class PolicyRuleProcessor {
    * (a `pulumi.Output<string>` with no usable name at preview time) when the
    * rule opts in via `autoLabel`.
    *
-   * The value is `auto-<component>-<roleHint-or-hash>`:
-   *   - `<component>` anchors the label to the target resource.
-   *   - `<roleHint>` is the consumer-supplied stable token when present
-   *     (sanitized), otherwise a stable 8-hex FNV-1a hash of the role reference's
-   *     stable string form.
+   * The value is `auto-<component>-<roleToken>`, where `<roleToken>` is the first
+   * available of, in priority order:
+   *   1. the rule's `roleHint` (consumer-supplied stable token), sanitized;
+   *   2. the role Output's own `__identifierHint`, sanitized (mirrors the
+   *      principal `__identifierHint` mechanism);
+   *   3. `role-<hash>`, a stable 8-hex FNV-1a hash of the role reference's
+   *      `toString()`.
+   * `<component>` anchors the label to the target resource.
    *
-   * It is derived purely from the role reference and the resource name — NEVER
-   * from the rule's array index — so the same rule produces the same label
-   * regardless of its position among sibling rules (reorder-stable). It is a
-   * pure function of its inputs (deterministic; no `Date.now`/random).
+   * It is derived purely from the role reference (its hint or string form) and
+   * the resource name — NEVER from the rule's array index — so the same rule
+   * produces the same label regardless of its position among sibling rules
+   * (reorder-stable). It is a pure function of its inputs (deterministic; no
+   * `Date.now`/random).
    *
    * @param role - The opaque role input that hit the fallback branch
    * @param roleHint - Optional consumer-supplied stable role token
@@ -358,27 +362,31 @@ export class PolicyRuleProcessor {
     componentName?: string
   ): string {
     const component = this.sanitizeLabelSegment(componentName) || 'resource';
-    const hint = roleHint && typeof roleHint === 'string'
-      ? this.sanitizeLabelSegment(roleHint)
-      : '';
-    const roleToken = hint || `role-${this.stableHash(this.roleRefString(role))}`;
+    const explicitHint =
+      roleHint && typeof roleHint === 'string'
+        ? this.sanitizeLabelSegment(roleHint)
+        : '';
+    const outputHint = this.sanitizeLabelSegment(this.roleOutputHint(role));
+    const roleToken =
+      explicitHint ||
+      outputHint ||
+      `role-${this.stableHash(String(role))}`;
     return `auto-${component}-${roleToken}`;
   }
 
   /**
-   * Produce a STABLE string form of an opaque role reference for hashing. Uses
-   * any preview-time hint the Output carries (mirroring the principal
-   * `__identifierHint` mechanism), otherwise the role's own `toString()`. This
-   * never reads the array index, so it is reorder-stable.
+   * Read any preview-time identifier hint an opaque role Output carries
+   * (mirroring the principal `__identifierHint` mechanism). Returns `''` when
+   * absent. Never reads the array index, so it is reorder-stable.
    */
-  private roleRefString(role: MatrixRoleInput): string {
+  private roleOutputHint(role: MatrixRoleInput): string {
     if (role && typeof role === 'object') {
       const hinted = role as { __identifierHint?: unknown };
       if (typeof hinted.__identifierHint === 'string') {
         return hinted.__identifierHint;
       }
     }
-    return String(role);
+    return '';
   }
 
   /**
