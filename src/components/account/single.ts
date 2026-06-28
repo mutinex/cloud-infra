@@ -76,9 +76,15 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
   private meta: CloudInfraMeta;
   /**
    * The single underlying Service-Account (single arity only). Frozen public
-   * field — consumed by goldens and downstream callers. `undefined` for bulk.
+   * accessor — consumed by goldens and downstream callers. Backed by a getter
+   * (NOT a definite-assignment field) so the declared type matches runtime
+   * nullability: on a SINGLE instance it returns the lone account (byte-identical
+   * to the pre-merge field); on a BULK instance it THROWS via {@link requireSingle}
+   * instead of silently being `undefined` while typed non-optional (NPE footgun).
    */
-  public readonly serviceAccount!: gcp.serviceaccount.Account;
+  public get serviceAccount(): gcp.serviceaccount.Account {
+    return this.requireSingle('serviceAccount');
+  }
   /** `true` when constructed with a `string[]` (bulk arity). */
   private readonly isBulk: boolean;
   /** The single input name (single arity only); `undefined` for bulk. */
@@ -254,9 +260,9 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
       });
 
       this.configs[singleName] = parsedConfig;
-      // Assign the frozen public single field (declared with definite-assign).
-      (this as { serviceAccount: gcp.serviceaccount.Account }).serviceAccount =
-        account;
+      // The frozen public `serviceAccount` accessor is a getter backed by the
+      // single entry registered here via addAccount() — no separate field to
+      // assign. requireSingle() returns this exact account on a single instance.
       this.addAccount(singleName, account);
 
       this.registerOutputs({ serviceAccount: account });
