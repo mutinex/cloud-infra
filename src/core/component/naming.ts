@@ -256,7 +256,30 @@ const NAMING_ARG_KEYS = [
   'omitPrefix',
   'omitLocation',
   'preview',
-] as const;
+] as const satisfies readonly (keyof NamingArgs)[];
+
+/**
+ * Compile-time coupling between {@link NAMING_ARG_KEYS} and {@link NamingArgs}.
+ *
+ * The `satisfies` above guarantees every listed key IS a NamingArgs key (no
+ * stray strings). This assertion closes the OTHER direction: it forces the
+ * listed keys to cover EXACTLY `keyof NamingArgs`, so adding a new flag to
+ * NamingArgs WITHOUT adding it to NAMING_ARG_KEYS becomes a COMPILE error here —
+ * preventing the new flag from silently leaking through splitMetaArgs into a
+ * component's forwarded config. `AssertExact<A, B>` resolves to `true` only when
+ * A and B are mutually assignable, else to a descriptive error string the
+ * `const _check: true = …` line then rejects.
+ */
+type AssertExact<A, B> = [A] extends [B]
+  ? [B] extends [A]
+    ? true
+    : { error: 'NAMING_ARG_KEYS is MISSING a NamingArgs key'; missing: Exclude<B, A> }
+  : { error: 'NAMING_ARG_KEYS has an EXTRA key not in NamingArgs'; extra: Exclude<A, B> };
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _namingArgKeysExhaustive: AssertExact<
+  (typeof NAMING_ARG_KEYS)[number],
+  keyof NamingArgs
+> = true;
 
 /**
  * Result of normalising a name-first OR meta-first constructor argument pair
