@@ -75,9 +75,10 @@ import type {
 } from '../index';
 
 /**
- * FROZEN legacy ROOT runtime value-export surface (pre-Wave-2 `dist/index.js`).
- * Do NOT remove an entry without a major-version break — every entry is a
- * symbol some consumer may `import { X } from '@mutinex/cloud-infra'`.
+ * FROZEN legacy ROOT runtime value-export surface, extracted from the Wave 2
+ * baseline `dist/index.js` built at commit `106822e` (v2 @ "Wave 1 done"). Do
+ * NOT remove an entry without a major-version break — every entry is a symbol
+ * some consumer may `import { X } from '@mutinex/cloud-infra'`.
  */
 const LEGACY_ROOT_VALUE_EXPORTS = [
   'ACCOUNT_TYPE',
@@ -218,6 +219,12 @@ const LEGACY_ROOT_VALUE_EXPORTS = [
 ] as const;
 
 describe('public surface — root back-compat (§1 runtime values)', () => {
+  it('the frozen legacy list has not drifted (135 entries)', () => {
+    // Pins the list size so an accidental add/remove of a list entry can't make
+    // the "all legacy exports present" assertion silently weaker/stronger.
+    expect(LEGACY_ROOT_VALUE_EXPORTS.length).toBe(135);
+  });
+
   it('still exports all 135 legacy root value exports', () => {
     const rootKeys = new Set(Object.keys(root));
     const missing = LEGACY_ROOT_VALUE_EXPORTS.filter((n) => !rootKeys.has(n));

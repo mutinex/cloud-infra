@@ -35,8 +35,21 @@
 export * from './organization/folder';
 export * from './organization/tag';
 
-// Org hierarchy: host/service projects (Shared VPC + API bootstrapping).
-export * from './organization/project';
+// Org hierarchy: host/service project components (Shared VPC + API
+// bootstrapping). We star only the host/service components and re-export the
+// project CONFIG types explicitly — the project-bootstrap internals in
+// `./organization/project/common` (DelayResource, baselineApis,
+// apisNeedingIdentities, createTagBindings, createServiceIdentities, the
+// ServiceIdentity* types) are `/advanced`-tier, not part of the `/org` surface.
+export * from './organization/project/host';
+export * from './organization/project/service';
+export {
+  CloudInfraProjectCustomConfigSchema,
+} from './organization/project/common';
+export type {
+  CloudInfraProjectConfig,
+  CloudInfraProjectCustomConfig,
+} from './organization/project/common';
 
 // Org network set: subnet / connector / PSA / NAT.
 export * from './organization/network';

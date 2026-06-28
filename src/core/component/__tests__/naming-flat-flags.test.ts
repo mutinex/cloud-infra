@@ -76,10 +76,19 @@ describe('flat naming flags resolve identically to the NamingMode alias (F1)', (
     );
   });
 
-  it('flat flag wins when both a flat flag and `naming` are supplied', () => {
+  it('flat flag wins when both a flat flag and `naming` are supplied (additive)', () => {
     // naming says conventional (no omit), flat flag says omitLocation → flat wins.
     expect(one('api', { domain: 'au', naming: 'conventional', omitLocation: true })).toBe(
       'p-api'
+    );
+  });
+
+  it('flat flag wins SUBTRACTIVELY (explicit false overrides a naming-mode omit)', () => {
+    // naming: 'no-prefix' would set omitPrefix:true (→ name-loc), but an
+    // explicit omitPrefix:false must override it back to the conventional form.
+    // Guards the `!== undefined` merge (a truthiness check would miss this).
+    expect(one('api', { domain: 'au', naming: 'no-prefix', omitPrefix: false })).toBe(
+      'p-api-au'
     );
   });
 
