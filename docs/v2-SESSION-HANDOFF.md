@@ -5,7 +5,10 @@
 > validated label map, real-preview results), `docs/v2-MIGRATION.md` (v1→v2 consumer runbook),
 > `docs/v2-SIMPLIFICATION-PLAN.md` (what the simplified API is + why).
 >
-> **Trunk: branch `v2` @ `6c28b0f`, 762 tests green, pushed to `origin/v2`.** Last updated 2026-06-28.
+> **Trunk: branch `v2` @ `70b2f9b`, 762 tests green, pushed to `origin/v2`.** Last updated 2026-06-28.
+> **Preview channel is LIVE**: every push to `v2` auto-publishes `@mutinex/cloud-infra@next`
+> (`2.0.0-next.<run>.g<sha>`) to GitHub Packages via `.github/workflows/cloud-infra-preview.yml`.
+> Latest published: `2.0.0-next.3.g70b2f9b`. Stable `latest` (1.0.2) is untouched. Consumers: `yarn add @mutinex/cloud-infra@next`.
 >
 > ⚠️ The work lives on the long-lived **`v2`** branch, NOT `main`. Use the integrator worktree
 > **`/Users/nik.zavgorodny/Dev/cloud-infra-wt-v2trunk`** (checked out on `v2`) for merges/builds; spawn
@@ -46,10 +49,16 @@ layer** (deny public `allUsers`/primitive roles, policy hook, external-principal
 
 ## 3. NEXT TASK — the SHIP path (user-driven; the user has approved proceeding)
 Keep `v2` a long-lived BRANCH; do **NOT** merge to `main` yet. In order:
-1. **Wire a preview-publish CI workflow off `v2`** — publish a prerelease package to a `next`/`preview`
-   dist-tag on each push to `v2` (build is clean CJS/ESM/DTS, 762 tests). This is the enabling plumbing and
-   the right first action. **Publishing is outward-facing → an explicit user go; build the workflow, confirm before the first real publish.**
+1. ✅ **DONE — preview-publish CI off `v2`.** `.github/workflows/cloud-infra-preview.yml`: single gated job
+   (`install → tsc --noEmit → test → build → publish`) publishes `2.0.0-next.<run>.g<sha>` to the `next`
+   dist-tag on every push to `v2` (+ manual dispatch from `v2`); least-privilege perms, `if: ref==v2` guard.
+   First publish verified green (`2.0.0-next.3.g70b2f9b`); `latest`=1.0.2 untouched. Bumped `.yarnrc.yml`
+   scope key `Mutinex`→`mutinex` (case-sensitive npm scope; was breaking auth on publish — also fixes the
+   stable workflow). **Deferred hardening:** actions pinned to `@v4` tags not SHAs (house-wide, matches the
+   stable workflow); stale tracked `package-lock.json` drift (`1.1.2`/`MIT` vs `1.0.2`/`Apache`).
 2. **Canary the admin-app repo first** (low-risk consumer) against the preview package; gate it clean.
+   Consumer installs `@mutinex/cloud-infra@next`. Document in its README/migration that `@next` is a
+   breaking **2.0** preview, not a patch off the `1.x` line.
 3. Then the org/monorepo stacks (gcp-organization mtx/mtx-org/mtx-apps; monorepo growthos/platform/dataos),
    one at a time, each gated to zero-replace, gcp provider pinned, human-reviewed `pulumi up`.
 
