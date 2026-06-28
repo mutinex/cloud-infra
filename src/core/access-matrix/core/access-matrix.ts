@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import {
-  AccessMatrixCases,
+  AccessMatrixCasesInput,
   MatrixUseCaseInput,
   MatrixUseCase,
 } from '../types/matrix-types';
@@ -32,10 +32,13 @@ export class CloudInfraAccessMatrix {
   /**
    * Create a new access matrix instance.
    *
-   * @param cases - Access matrix cases mapping case names to case objects.
-   *              The keys are case names, and values are `MatrixUseCase` objects.
+   * @param cases - Access matrix cases mapping case names to use case objects.
+   *              The canonical value shape is the `MatrixUseCase`
+   *              `{ principals?, rules }` object. A bare `MatrixPolicyRule[]`
+   *              array is still accepted per case for backward compatibility
+   *              and normalized internally.
    */
-  constructor(cases: AccessMatrixCases) {
+  constructor(cases: AccessMatrixCasesInput) {
     const startTime = Date.now();
 
     // Validate input
@@ -87,7 +90,7 @@ export class CloudInfraAccessMatrix {
    *
    * @param cases - The access matrix cases to process
    */
-  private processCases(cases: AccessMatrixCases): void {
+  private processCases(cases: AccessMatrixCasesInput): void {
     const caseEntries = Object.entries(cases);
 
     // Process cases sequentially to maintain predictable resource ordering

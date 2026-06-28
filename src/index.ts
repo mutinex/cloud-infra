@@ -14,6 +14,11 @@ export * from './components/cloudrunjob';
 export * from './components/database';
 export * from './components/role';
 export * from './core/access-matrix';
+// `createAccessMatrix` is the documented main entry point for the access matrix
+// (see core/access-matrix README + JSDoc). It is already re-exported by the
+// wildcard above; name it explicitly so the documented entry point and the
+// root export stay consistent and discoverable.
+export { createAccessMatrix } from './core/access-matrix';
 export * from './components/alb';
 export * from './components/backendservice';
 export * from './components/secret';
