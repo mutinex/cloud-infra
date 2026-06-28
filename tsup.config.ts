@@ -3,7 +3,15 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   // Aligned with tsconfig.json `target` (ES2021).
   target: 'es2021',
-  entry: ['src/index.ts'],
+  // Multi-entry: the back-compat root (`.`) plus the tiered subpath entry
+  // points `@mutinex/cloud-infra/org` and `@mutinex/cloud-infra/advanced`.
+  // The `index` entry is emitted byte-for-byte as before (same key → same
+  // `dist/index.*` filenames); `org`/`advanced` are purely additive.
+  entry: {
+    index: 'src/index.ts',
+    org: 'src/org.ts',
+    advanced: 'src/advanced.ts',
+  },
   format: ['cjs', 'esm'],
   splitting: false,
   sourcemap: true,
