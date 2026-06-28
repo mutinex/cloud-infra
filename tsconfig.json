@@ -17,6 +17,7 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "esModuleInterop": true,
+    "isolatedModules": true,
     "types": ["vitest/globals"]
   }
 }
