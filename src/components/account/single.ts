@@ -9,7 +9,7 @@ import {
   CloudInfraAccountConfig,
   CloudInfraAccountBase,
 } from './common';
-import { resolveMeta, type NamingArgs } from '../../core/component';
+import { splitMetaArgs, type NamingArgs } from '../../core/component';
 
 /**
  * A lightweight wrapper around a single Google Cloud Service-Account that
@@ -106,17 +106,10 @@ export class CloudInfraAccount extends CloudInfraAccountBase {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // account config passed straight through.
-    let meta: CloudInfraMeta;
-    let config: CloudInfraAccountConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraAccountArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraAccountConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraAccountConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const componentName = meta.getName();
 

@@ -21,7 +21,7 @@ import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -156,17 +156,8 @@ export class CloudInfraBackendService extends CloudInfraComponent {
     // path, split the naming metadata out of the args; everything else is the
     // backend-service config passed straight through (consumed UNCHANGED below
     // by the extras parse, the BackendService and the optional HealthCheck).
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraBackendServiceConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...config } =
-        argsOrConfig as CloudInfraBackendServiceArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      cloudInfraConfig = config;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraBackendServiceConfig;
-    }
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraBackendServiceConfig>(nameOrMeta, argsOrConfig);
 
     const resourceName = meta.getName();
 

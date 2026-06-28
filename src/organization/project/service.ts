@@ -17,7 +17,7 @@ import {
 import { ServiceUsageApiBootstrap } from './bootstrap';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -120,17 +120,10 @@ export class CloudInfraServiceProject extends CloudInfraComponent {
     // path, split the naming metadata out of the args; everything else is the
     // project config passed straight through (consumed UNCHANGED below — every
     // child name, dynamic provider, dependsOn is derived from it).
-    let meta: CloudInfraMeta;
-    let config: CloudInfraProjectConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraServiceProjectArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraProjectConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraProjectConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     // ── Pre-super computation ──────────────────────────────────────────────
     // `super()` must be the first statement, so the name/validation logic that

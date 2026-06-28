@@ -15,7 +15,7 @@ import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -113,17 +113,10 @@ export class CloudInfraConnector extends CloudInfraComponent {
     // path, split the naming metadata out of the args; everything else is the
     // connector config passed straight through (parsed + consumed UNCHANGED
     // below by the Connector). `opts` is forwarded unchanged.
-    let meta: CloudInfraMeta;
-    let config: gcp.vpcaccess.ConnectorArgs;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraConnectorArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest as gcp.vpcaccess.ConnectorArgs;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as gcp.vpcaccess.ConnectorArgs;
-    }
+    const { meta, config } = splitMetaArgs<gcp.vpcaccess.ConnectorArgs>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
     super(

@@ -18,7 +18,7 @@ import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -140,17 +140,10 @@ export class CloudInfraNat extends CloudInfraComponent {
     // path, split the naming metadata out of the args; everything else is the
     // NAT config passed straight through (parsed + consumed UNCHANGED below by
     // the Router, RouterNat and Route).
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraNatConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...config } =
-        argsOrConfig as CloudInfraNatArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      cloudInfraConfig = config as CloudInfraNatConfig;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraNatConfig;
-    }
+    const { meta, config: cloudInfraConfig } = splitMetaArgs<CloudInfraNatConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
 

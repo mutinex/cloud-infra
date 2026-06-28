@@ -6,7 +6,7 @@ import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -134,21 +134,8 @@ export class CloudInfraRole extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // role config passed straight through.
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraRoleConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraRoleArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      // `CloudInfraRoleConfig` is a discriminated union; the rest-spread of
-      // `NamingArgs & (Project | Org)` loses the union narrowing, so a cast is
-      // needed. It is sound — the four naming keys are disjoint from both union
-      // members, so removing them leaves a structurally valid role config.
-      cloudInfraConfig = rest as CloudInfraRoleConfig;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraRoleConfig;
-    }
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraRoleConfig>(nameOrMeta, argsOrConfig);
 
     const name = resolveRoleName(meta);
 

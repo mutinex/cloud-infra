@@ -9,7 +9,7 @@ import {
   GcpDualRegions,
 } from '../../core/meta/locations';
 import { CloudInfraBucketConfig, CloudInfraBucketArgs } from './common';
-import { CloudInfraComponent, resolveMeta } from '../../core/component';
+import { CloudInfraComponent, splitMetaArgs } from '../../core/component';
 
 /** Pulumi type token for the single-bucket component. */
 export const BUCKET_TYPE = 'cloud-infra:bucket:Bucket';
@@ -85,17 +85,8 @@ export class CloudInfraBucket extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // bucket config passed straight through.
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraBucketConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...config } =
-        argsOrConfig as CloudInfraBucketArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      cloudInfraConfig = config;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraBucketConfig;
-    }
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraBucketConfig>(nameOrMeta, argsOrConfig);
 
     const componentName = meta.getName();
 

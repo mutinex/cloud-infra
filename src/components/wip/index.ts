@@ -30,6 +30,7 @@ import { gcpConfig } from '../../config';
 import {
   CloudInfraComponent,
   resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -91,17 +92,10 @@ export class CloudInfraWIP extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // pool config passed straight through.
-    let meta: CloudInfraMeta;
-    let cloudInfraConfig: CloudInfraWIPConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraWIPArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      cloudInfraConfig = rest;
-    } else {
-      meta = nameOrMeta;
-      cloudInfraConfig = argsOrConfig as CloudInfraWIPConfig;
-    }
+    const { meta, config: cloudInfraConfig } = splitMetaArgs<CloudInfraWIPConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceNameForSuper = meta.getName();
     super(

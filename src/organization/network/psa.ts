@@ -16,7 +16,7 @@ import { ValidationError } from '../../core/errors';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -157,17 +157,10 @@ export class CloudInfraPSA extends CloudInfraComponent {
     // path, split the naming metadata out of the args; everything else is the
     // PSA config passed straight through (parsed + consumed UNCHANGED below by
     // the GlobalAddress, Connection and optional Provider).
-    let meta: CloudInfraMeta;
-    let config: CloudInfraPSAInputConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraPSAArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest as CloudInfraPSAInputConfig;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraPSAInputConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraPSAInputConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     const resourceName = meta.getName();
 

@@ -7,7 +7,7 @@ import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 
@@ -104,17 +104,12 @@ export class CloudInfraCloudRunJob extends CloudInfraComponent {
     // Normalize both overloads to a (meta, config) pair. For the name-first
     // path, split the naming metadata out of the args; everything else is the
     // job config passed straight through.
-    let meta: CloudInfraMeta;
-    let config: CloudInfraCloudRunJobConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraCloudRunJobArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraCloudRunJobConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraCloudRunJobConfig>(
+      nameOrMeta,
+      argsOrConfig as
+        | (NamingArgs & CloudInfraCloudRunJobConfig)
+        | CloudInfraCloudRunJobConfig
+    );
 
     const resourceName = meta.getName();
 

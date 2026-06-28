@@ -13,7 +13,7 @@ import { deriveRegion } from '../../core/helpers';
 import { CloudInfraLogger } from '../../core/logging';
 import {
   CloudInfraComponent,
-  resolveMeta,
+  splitMetaArgs,
   type NamingArgs,
 } from '../../core/component';
 import { resourceNamingConfig } from '../../config';
@@ -141,17 +141,10 @@ export class CloudInfraCertificateMap extends CloudInfraComponent {
     // certificate config passed straight through (consumed UNCHANGED below —
     // every child name/suffix, the sanitizer and deleteBeforeReplace/dependsOn
     // are derived from it).
-    let meta: CloudInfraMeta;
-    let config: CloudInfraCertificateMapConfig;
-    if (typeof nameOrMeta === 'string') {
-      const { domain, location, prefix, naming, ...rest } =
-        argsOrConfig as CloudInfraCertificateMapArgs;
-      meta = resolveMeta(nameOrMeta, { domain, location, prefix, naming });
-      config = rest;
-    } else {
-      meta = nameOrMeta;
-      config = argsOrConfig as CloudInfraCertificateMapConfig;
-    }
+    const { meta, config } = splitMetaArgs<CloudInfraCertificateMapConfig>(
+      nameOrMeta,
+      argsOrConfig
+    );
 
     // Validate + resolve the generated NAME (unchanged, F1) before super. The
     // child suffix conventions (`-domain`/`-cert.name`/`-hostname`, sanitized)
