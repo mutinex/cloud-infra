@@ -37,6 +37,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # .yarnrc.yml interpolates ${GITHUB_PACKAGES_TOKEN} for the @mutinex scope, so
+    # Yarn errors at startup on ANY `yarn` command if it is unset — set it job-wide.
+    # secrets.GITHUB_TOKEN is the ephemeral, repo-scoped, per-run token.
+    env:
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         # Default shallow checkout (depth 1) is sufficient — we only read HEAD's
@@ -52,8 +57,6 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
-        env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # --- Quality gate: everything below must pass before we publish ---
       - name: Type check
@@ -87,7 +90,7 @@ jobs:
       - name: 'Publish preview (dist-tag: next)'
         run: yarn npm publish --tag next
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_PACKAGES_TOKEN is inherited from the job env (used by .yarnrc.yml).
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Job summary
