@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { PolicyRuleProcessor } from '../../core/policy-rule-processor';
 import { CloudInfraRole } from '../../../../components/role';
 import { CloudInfraMeta } from '../../../meta';
+import { accessMatrixConfig } from '../../../../config';
 import type {
   MatrixPolicyRule,
   MatrixRoleInput,
@@ -263,6 +264,41 @@ describe('W3-A (b) OPT-IN → deterministic, reorder-stable derived label', () =
         COMPONENT
       )
     ).toBe('my-bucket:auto-my-bucket-custom-admin:analyst');
+  });
+});
+
+describe('F3 — auto-label resource-name truncation at maxResourceNameLength (100)', () => {
+  // The README advertises the 100-char truncation; pin it on the REAL
+  // generateResourceName. The auto-derived middle segment can be long (it
+  // includes the component name + role token), so an autoLabel grant on a
+  // long-named component is exactly where the cap bites.
+  it('a name longer than 100 chars is truncated to EXACTLY 100', () => {
+    expect(accessMatrixConfig.maxResourceNameLength).toBe(100);
+
+    const longComponent = 'c'.repeat(80); // forces > 100 once joined
+    const role = hintedOpaqueRole('admin');
+    const name = internals().generateResourceName(
+      ruleOf(role, { autoLabel: true }),
+      principal('p'.repeat(40)),
+      ctx(0),
+      longComponent
+    );
+
+    expect(name.length).toBe(100);
+    // Truncation is a plain prefix-substring of the untruncated name, which
+    // starts with the (un-truncated) component segment.
+    expect(name.startsWith(`${longComponent}:`)).toBe(true);
+  });
+
+  it('a name at/under 100 chars is returned verbatim (no truncation)', () => {
+    const name = internals().generateResourceName(
+      ruleOf('roles/storage.admin'),
+      principal('analyst'),
+      ctx(0),
+      'my-bucket'
+    );
+    expect(name).toBe('my-bucket:storage.admin:analyst');
+    expect(name.length).toBeLessThanOrEqual(100);
   });
 
   it('component name is sanitized into the derived label', () => {

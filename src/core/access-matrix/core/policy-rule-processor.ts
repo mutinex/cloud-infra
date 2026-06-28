@@ -8,6 +8,7 @@ import {
   BulkResource,
   MatrixResource,
   AllPrincipalTypes,
+  OutputPrincipalWithHints,
 } from '../types/matrix-types';
 import { AccessMatrixConfig, ResolvedPrincipal } from '../types/common-types';
 import { PrincipalFactory } from '../principals/principal-factory';
@@ -342,7 +343,11 @@ export class PolicyRuleProcessor {
    *   2. the role Output's own `__identifierHint`, sanitized (mirrors the
    *      principal `__identifierHint` mechanism);
    *   3. `role-<hash>`, a stable 8-hex FNV-1a hash of the role reference's
-   *      `toString()`.
+   *      `toString()`. NOTE: for a REAL `pulumi.Output<string>` this bare-hash
+   *      fallback is NON-DISTINGUISHING — every Output stringifies to the same
+   *      opaque `Calling [toString]...` text, so two distinct opaque-role rules on
+   *      the same component would hash identically and collide. Supply `roleHint`
+   *      (or a role-Output `__identifierHint`) to get a stable, distinct token.
    * `<component>` anchors the label to the target resource.
    *
    * It is derived purely from the role reference (its hint or string form) and
@@ -381,7 +386,10 @@ export class PolicyRuleProcessor {
    */
   private roleOutputHint(role: MatrixRoleInput): string {
     if (role && typeof role === 'object') {
-      const hinted = role as { __identifierHint?: unknown };
+      // Reuse the shared OutputPrincipalWithHints type (the `__identifierHint`
+      // carrier) instead of an ad-hoc inline cast, mirroring how the principal
+      // resolvers read the same hint.
+      const hinted = role as OutputPrincipalWithHints;
       if (typeof hinted.__identifierHint === 'string') {
         return hinted.__identifierHint;
       }
