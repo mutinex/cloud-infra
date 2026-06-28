@@ -31,8 +31,7 @@ import { CloudInfraAccount } from '@mutinex/cloud-infra';
 
 // Name-first: the second argument carries naming metadata + the component config.
 const sa = new CloudInfraAccount('my-app', {
-  domain: 'au', // naming metadata
-  naming: 'conventional', // naming mode (optional, this is the default)
+  domain: 'au', // naming metadata — `prefix-name-loc` is the default formula
   // ...any account-specific config fields follow here
 });
 ```
@@ -42,52 +41,66 @@ const sa = new CloudInfraAccount('my-app', {
 The naming inputs accepted by a name-first component (everything else in the
 args object is the component's own Pulumi config):
 
-| Field      | Type                                    | Meaning                                                              |
-| :--------- | :-------------------------------------- | :------------------------------------------------------------------- |
-| `domain`   | `'au' \| 'us' \| 'gl'`                  | Org domain. Drives the default region and the domain label.          |
-| `location` | region / multi-region / dual-region[]   | Explicit GCP location. Defaults to the region for `domain`.          |
-| `prefix`   | `string`                                | Custom prefix; overrides the Pulumi-project-derived prefix.          |
-| `naming`   | `NamingMode`                            | Which `generateName` formula to use. Defaults to `'conventional'`.   |
+| Field          | Type                                  | Meaning                                                              |
+| :------------- | :------------------------------------ | :------------------------------------------------------------------- |
+| `domain`       | `'au' \| 'us' \| 'gl'`                | Org domain. Drives the default region and the domain label.          |
+| `location`     | region / multi-region / dual-region[] | Explicit GCP location. Defaults to the region for `domain`.          |
+| `prefix`       | `string`                              | Custom prefix; overrides the Pulumi-project-derived prefix.          |
+| `omitPrefix`   | `boolean`                             | Drop the prefix segment from the generated name.                     |
+| `omitLocation` | `boolean`                             | Drop the location segment from the generated name.                   |
+| `preview`      | `string`                              | Render a preview name `prefix-name-hash7(preview)`.                  |
 
-### `NamingMode`
+### Naming formulas — the flat flags
 
-`NamingMode` selects which of the five `generateName` formulas a name-first
-component uses. It is the discriminated union
-`'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview: string }`:
+Pick the `generateName` formula with the flat `omitPrefix` / `omitLocation` /
+`preview` flags. The default (no flags set) is the conventional
+`prefix-name-loc`:
 
-| `naming`               | Formula             | Example (name `api`, prefix `p`, loc `au`) |
-| :--------------------- | :------------------ | :----------------------------------------- |
-| `'conventional'` (def) | `prefix-name-loc`   | `p-api-au`                                  |
-| `'no-location'`        | `prefix-name`       | `p-api`                                     |
-| `'no-prefix'`          | `name-loc`          | `api-au`                                    |
-| `'literal'`            | `name`              | `api`                                       |
-| `{ preview: string }`  | `prefix-name-hash7` | `p-api-1a2…`                                |
+| Flat flags                             | Formula             | Example (name `api`, prefix `p`, loc `au`) |
+| :------------------------------------- | :------------------ | :----------------------------------------- |
+| _(none)_                               | `prefix-name-loc`   | `p-api-au`                                  |
+| `omitLocation: true`                   | `prefix-name`       | `p-api`                                     |
+| `omitPrefix: true`                     | `name-loc`          | `api-au`                                    |
+| `omitPrefix: true, omitLocation: true` | `name`              | `api`                                       |
+| `preview: 'pr-123'`                    | `prefix-name-hash7` | `p-api-1a2…`                                |
 
-`preview` is supplied as an object discriminator (`{ preview: "pr-123" }`) so the
-preview token rides along with the mode; it takes precedence over the omit
-branches. These modes map onto the meta-first flags below:
-
-- `'no-location'` → `omitLocation: true`
-- `'no-prefix'` → `omitPrefix: true`
-- `'literal'` → `omitPrefix: true, omitLocation: true`
-- `{ preview }` → `preview: <string>`
+`preview` takes precedence over the `omit*` flags.
 
 ```ts
 import { CloudInfraAccount } from '@mutinex/cloud-infra';
 
-// `literal` → the generated name is exactly "ci-runner".
-const sa = new CloudInfraAccount('ci-runner', { naming: 'literal' });
+// `omitPrefix + omitLocation` → the generated name is exactly "ci-runner".
+const sa = new CloudInfraAccount('ci-runner', {
+  omitPrefix: true,
+  omitLocation: true,
+});
 
 // Preview/ephemeral name → "p-api-<hash7(pr-123)>".
 const preview = new CloudInfraAccount('api', {
   domain: 'au',
-  naming: { preview: 'pr-123' },
+  preview: 'pr-123',
 });
 ```
 
-> The `NamingMode` surface covers single-name and bulk (`name: string[]`)
-> components. The zonal instance formula (`generateZonalName`) is a separate
-> naming surface not yet expressed as a `NamingMode`.
+> The flat flags cover single-name and bulk (`name: string[]`) components. The
+> zonal instance formula (`generateZonalName`) is a separate naming surface.
+
+#### `naming: NamingMode` (deprecated alias)
+
+> **Deprecated.** Prefer the flat `omitPrefix` / `omitLocation` / `preview`
+> flags above. The `naming` discriminator is still accepted and maps onto the
+> **identical** meta flags (resolved name byte-identical, F1); when both a flat
+> flag and `naming` are supplied, the flat flag wins.
+
+`naming` is the union
+`'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview: string }`,
+which maps to the flat flags as:
+
+- `'conventional'` → _(no flags)_
+- `'no-location'` → `omitLocation: true`
+- `'no-prefix'` → `omitPrefix: true`
+- `'literal'` → `omitPrefix: true, omitLocation: true`
+- `{ preview }` → `preview: <string>`
 
 ---
 
