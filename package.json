@@ -4,6 +4,24 @@
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./org": {
+      "types": "./dist/org.d.ts",
+      "import": "./dist/org.mjs",
+      "require": "./dist/org.js"
+    },
+    "./advanced": {
+      "types": "./dist/advanced.d.ts",
+      "import": "./dist/advanced.mjs",
+      "require": "./dist/advanced.js"
+    },
+    "./package.json": "./package.json"
+  },
   "description": "Pulumi library designed to streamline the management of Google Cloud Platform (GCP) infrastructure",
   "repository": {
     "type": "git",

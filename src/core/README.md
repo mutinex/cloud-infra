@@ -10,7 +10,7 @@ The `cloud-infra/core` directory contains the foundational modules that power th
 - **[logging.ts](./logging.ts)** - Structured logging with component context
 - **[errors.ts](./errors.ts)** - Enhanced error hierarchy with context
 - **[helpers.ts](./helpers.ts)** - Essential utility functions
-- **[component/naming.ts](./component/naming.ts)** - Name-first construction (`NamingArgs` / `NamingMode`)
+- **[component/naming.ts](./component/naming.ts)** - Name-first construction (`NamingArgs` flat flags; `NamingMode` is a deprecated alias)
 
 ### 🧩 **Core Components**
 
@@ -93,20 +93,25 @@ throw new ResourceError('Failed to create bucket', 'storage', 'createBucket');
 
 ### Name-First Component Construction
 
-v2 components are constructed name-first via the `resolveMeta` /
-`NamingArgs` / `NamingMode` surface in `component/naming.ts`:
+v2 components are constructed name-first via the `resolveMeta` / `NamingArgs`
+surface in `component/naming.ts`. Choose the naming formula with the flat
+`omitPrefix` / `omitLocation` / `preview` flags (the default is the conventional
+`prefix-name-loc`):
 
 ```typescript
 import { CloudInfraAccount } from '@mutinex/cloud-infra';
 
-// new CloudInfraX("name", { domain, location, prefix, naming, ...config })
+// new CloudInfraX("name", { domain, location, prefix, omitPrefix?, omitLocation?, preview?, ...config })
 const sa = new CloudInfraAccount('my-app', {
-  domain: 'au',
-  naming: 'conventional', // 'conventional' | 'no-location' | 'no-prefix' | 'literal' | { preview }
+  domain: 'au', // → p-my-app-au (conventional, the default)
 });
+
+// Drop the location segment → p-my-app
+const svc = new CloudInfraAccount('my-app', { domain: 'au', omitLocation: true });
 ```
 
-See the [Meta README](./meta/README.md) for the full `NamingMode` formula table.
+See the [Meta README](./meta/README.md) for the full formula table. The
+`naming: NamingMode` discriminator is a **deprecated** alias for the flat flags.
 
 ## 📚 Detailed Module Documentation
 

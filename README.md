@@ -10,6 +10,28 @@ By standardizing resource naming, metadata, outputs, and access policies, this l
 
 The library is designed with an "infrastructure as software" philosophy, favoring strongly-typed, reusable components over raw resource definitions. This approach not only improves developer experience by providing clear APIs and reducing boilerplate, but also enhances security and compliance by embedding organizational policies directly into the building blocks of the infrastructure. The result is a more robust, predictable, and secure cloud foundation.
 
+## Import surface (entry points)
+
+The package is organized into three tiers so the common, discoverable surface
+stays small:
+
+| Entry point                       | Use it for                                                                                                                                            |
+| :-------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@mutinex/cloud-infra`            | The everyday application surface: the resource component classes and the four core objects (`CloudInfraOutput`, `CloudInfraReference`, `CloudInfraAccessMatrix`, the gcp config reader). |
+| `@mutinex/cloud-infra/org`        | Organization-hierarchy components: `CloudInfraFolder`, `CloudInfraTag`, project host/service, the org network set (subnet / connector / PSA / NAT), `CloudInfraEntitlement` (PAM), `CloudInfraWIP` / `CloudInfraWIPProvider`. |
+| `@mutinex/cloud-infra/advanced`   | Power-user / extension internals: access-matrix internals, naming-engine internals, `core/helpers`, the abstract component base, and per-component factory/base types. |
+
+```ts
+import { CloudInfraBucket } from '@mutinex/cloud-infra';
+import { CloudInfraServiceProject } from '@mutinex/cloud-infra/org';
+import { ResourceRegistry } from '@mutinex/cloud-infra/advanced';
+```
+
+> For backward compatibility every symbol is **also** still exported from the
+> package root (`@mutinex/cloud-infra`); the org / advanced re-exports there are
+> marked `@deprecated` and will leave the root at the next major. New code
+> should import from the `/org` and `/advanced` subpaths.
+
 ## Core Components
 
 The core of the library consists of foundational helpers that provide the building blocks for all other components.
