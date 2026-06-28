@@ -4,9 +4,10 @@
 import * as pulumi from '@pulumi/pulumi';
 import { CloudInfraMeta } from '../meta';
 import {
-  FLAT_KEY_SEPARATOR,
   getServiceAlias,
   deriveRegionSegment,
+  composeFlatKey,
+  composeFlatKeyPrefix,
 } from '../flat-key-grammar';
 
 /**
@@ -262,40 +263,17 @@ export class CloudInfraOutput {
     const hasLocation = entryFields.location !== undefined;
     const regionSegment = hasLocation ? deriveRegionSegment(meta) : undefined;
 
-    const sep = FLAT_KEY_SEPARATOR;
-
-    // HARD INVARIANT: the key grammar is positional and the consumer
-    // (`CloudInfraReference.groupFlatMap`) parses segments by count — so each
-    // addressing segment must be a SAFE token (no separator, whitespace,
-    // control, or unicode), or the round-trip silently corrupts (a dotted name
-    // would shift the region/name split; whitespace/unicode breaks a plain
-    // `requireOutput("<key>")`). Validate a POSITIVE charset here, at the
-    // producer, with a clear message rather than emitting an un-parseable key.
-    // `domain` (au/us/gl) and `service` (alias `[a-z0-9]+`) are already safe by
-    // construction; `groupingKey` is user-supplied and `regionSegment` is
-    // defensive.
-    const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
-    for (const [segName, segValue] of [
-      ['domain', domain],
-      ['service', service],
-      ['region', regionSegment],
-      ['name (grouping key)', groupingKey],
-    ] as const) {
-      if (segValue !== undefined && !SAFE_SEGMENT.test(segValue)) {
-        throw new Error(
-          `Invalid flat-output ${segName} segment '${segValue}': it must match ` +
-            `${SAFE_SEGMENT} (letters, digits, '_' or '-' only) — no separator ` +
-            `'${sep}', whitespace, control or unicode characters. The flat-output ` +
-            `key grammar '<domain>.<service>[.<region>].<name>.<field>' is ` +
-            `positional and is read by a plain stack-output lookup, so an unsafe ` +
-            `segment would corrupt the consumer's parse.`
-        );
-      }
-    }
-    const prefix =
-      regionSegment !== undefined
-        ? `${domain}${sep}${service}${sep}${regionSegment}${sep}${groupingKey}`
-        : `${domain}${sep}${service}${sep}${groupingKey}`;
+    // Compose (and validate) the addressing PREFIX via the shared grammar — the
+    // single place addressing parts become a string. The grammar enforces the
+    // SAFE-segment charset (rejecting a separator/whitespace/unicode in a
+    // `name`/`region`) so an un-parseable key can never be emitted.
+    const address = {
+      domain,
+      service,
+      region: regionSegment,
+      name: groupingKey,
+    };
+    const prefix = composeFlatKeyPrefix(address);
 
     // PREFIX OWNERSHIP: the per-key collision guard below only catches two
     // resources colliding on the same `prefix.field`. Two DIFFERENT resources
@@ -327,7 +305,7 @@ export class CloudInfraOutput {
       if (value === undefined) {
         continue;
       }
-      const key = `${prefix}${sep}${field}`;
+      const key = composeFlatKey(address, field);
       if (Object.prototype.hasOwnProperty.call(this.flat, key)) {
         throw new Error(
           `Flat-output key collision: '${key}' is produced by more than one ` +
