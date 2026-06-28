@@ -229,12 +229,21 @@ export interface MetaArgsSplit<TConfig> {
  * @typeParam TConfig The component's own config type (the non-naming remainder).
  * @param nameOrMeta   The first constructor arg: a name (name-first) or a
  *                     {@link CloudInfraMeta} (meta-first).
- * @param argsOrConfig The second constructor arg: combined `NamingArgs & TConfig`
- *                     (name-first) or `TConfig` (meta-first).
+ * @param argsOrConfig The second constructor arg: the combined name-first args
+ *                     (`NamingArgs` folded over the config, with any naming-named
+ *                     config keys yielding to the {@link NamingArgs} typing) OR a
+ *                     bare meta-first `TConfig`.
+ *
+ * The name-first arm of the parameter type is `NamingArgs &
+ * Omit<TConfig, keyof NamingArgs>` rather than a bare `NamingArgs & TConfig`:
+ * dropping any `TConfig` keys that collide with {@link NamingArgs} (e.g. a
+ * component whose config independently declares `location` with a DIFFERENT type)
+ * keeps the intersection satisfiable. Runtime behaviour is unchanged — the same
+ * {@link NAMING_ARG_KEYS} are stripped regardless of the static type.
  */
 export function splitMetaArgs<TConfig>(
   nameOrMeta: string | CloudInfraMeta,
-  argsOrConfig: (NamingArgs & TConfig) | TConfig
+  argsOrConfig: (NamingArgs & Omit<TConfig, keyof NamingArgs>) | TConfig
 ): MetaArgsSplit<TConfig> {
   if (typeof nameOrMeta === 'string') {
     const combined = { ...(argsOrConfig as NamingArgs & TConfig) } as Record<

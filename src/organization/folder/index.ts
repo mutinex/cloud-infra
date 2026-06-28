@@ -7,7 +7,11 @@ import { PulumiInputStringSchema } from '../../core/types';
 import { gcpConfig } from '../../config';
 import { CloudInfraLogger } from '../../core/logging';
 import { ValidationError } from '../../core/errors';
-import { CloudInfraComponent } from '../../core/component';
+import {
+  CloudInfraComponent,
+  splitMetaArgs,
+  type NamingArgs,
+} from '../../core/component';
 
 /** Pulumi type token for the Folder component. */
 export const FOLDER_TYPE = 'cloud-infra:folder:CloudInfraFolder';
@@ -30,17 +34,58 @@ export type CloudInfraFolderConfig = Omit<
   cloudInfraTags?: pulumi.Input<string>[];
 };
 
+/**
+ * Name-first construction args for `CloudInfraFolder` (v2 DX).
+ *
+ * Folds the naming metadata ({@link NamingArgs}: `domain` / `location` /
+ * `prefix` / `naming`) together with the folder config
+ * ({@link CloudInfraFolderConfig}) into a single args object. The naming fields
+ * are resolved into a `CloudInfraMeta` internally (identical `generateName`
+ * output, Frozen Contract F1); the remaining fields are passed straight through
+ * as the folder config exactly as the meta-first path.
+ */
+export type CloudInfraFolderArgs = NamingArgs & CloudInfraFolderConfig;
+
 export class CloudInfraFolder extends CloudInfraComponent {
   private meta: CloudInfraMeta;
   private folder: gcp.organizations.Folder;
   private tagBindings: gcp.tags.TagBinding[] = [];
   private readonly inputName: string;
 
+  /**
+   * Name-first construction (v2 DX, preferred). Naming metadata
+   * (`domain` / `location` / `prefix` / `naming`) and the folder config are
+   * folded into a single args object; the name is resolved into a
+   * `CloudInfraMeta` internally with byte-identical naming (Frozen Contract F1).
+   */
+  constructor(
+    name: string,
+    args?: CloudInfraFolderArgs,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  /**
+   * @deprecated Meta-first construction. Prefer the name-first overload
+   * `new CloudInfraFolder(name, args, opts)`. Retained for backward
+   * compatibility; produces identical resources.
+   * @param meta - CloudInfra meta information for naming/tagging.
+   * @param cloudInfraConfig - Configuration passed through to the folder + tags.
+   */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraFolderConfig = {},
+    cloudInfraConfig?: CloudInfraFolderConfig,
+    opts?: pulumi.ComponentResourceOptions
+  );
+  constructor(
+    nameOrMeta: string | CloudInfraMeta,
+    argsOrConfig: CloudInfraFolderArgs | CloudInfraFolderConfig = {},
     opts?: pulumi.ComponentResourceOptions
   ) {
+    // Normalize both overloads to a (meta, config) pair. For the name-first
+    // path, split the naming metadata out of the args; everything else is the
+    // folder config passed straight through (consumed UNCHANGED below).
+    const { meta, config: cloudInfraConfig } =
+      splitMetaArgs<CloudInfraFolderConfig>(nameOrMeta, argsOrConfig);
+
     const resourceName = meta.getName();
 
     super(
