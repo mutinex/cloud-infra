@@ -56,9 +56,17 @@ Keep `v2` a long-lived BRANCH; do **NOT** merge to `main` yet. In order:
    scope key `Mutinex`→`mutinex` (case-sensitive npm scope; was breaking auth on publish — also fixes the
    stable workflow). **Deferred hardening:** actions pinned to `@v4` tags not SHAs (house-wide, matches the
    stable workflow); stale tracked `package-lock.json` drift (`1.1.2`/`MIT` vs `1.0.2`/`Apache`).
-2. **Canary the admin-app repo first** (low-risk consumer) against the preview package; gate it clean.
-   Consumer installs `@mutinex/cloud-infra@next`. Document in its README/migration that `@next` is a
-   breaking **2.0** preview, not a patch off the `1.x` line.
+2. ✅ **DONE — admin-os (admin-app) canary GATED CLEAN.** `admin-os/pulumi` consumes exactly ONE symbol
+   (`CloudInfraReference` in `cms.ts`, legacy 2-arg `get(type,name)` reading `mutinex/cms/{dev,stg,prd}`).
+   Installed the published `@mutinex/cloud-infra@2.0.0-next.4.g9c8c8e8` from GitHub Packages (its `.yarnrc.yml`
+   already uses lowercase `mutinex` scope): **zero code changes**, `tsc --noEmit` green — v2's preserved
+   `@deprecated` legacy positional `get()` overload kept it compiling and wire-compatible. `pulumi preview`
+   on all 3 deployed stacks = **zero replace/delete from the migration**; v1↔v2 baseline diff on `dev` was
+   byte-identical (`+-1 replace, ~1 update, 23 unchanged` on each). The only churn is admin-os's OWN
+   pre-existing drift — a `RandomBytes` keyed `seconds: ${Date.now()}` (`index.ts:140`) that replaces on
+   every run (latent bug in THEIR code, not ours), plus image/env config. Preview worktree kept at
+   `/Users/nik.zavgorodny/Dev/admin-os-wt-v2-preview` (branch `v2-canary`, pinned to next.4). README "this
+   is a breaking 2.0 preview" note still TODO when admin-os formally adopts.
 3. Then the org/monorepo stacks (gcp-organization mtx/mtx-org/mtx-apps; monorepo growthos/platform/dataos),
    one at a time, each gated to zero-replace, gcp provider pinned, human-reviewed `pulumi up`.
 
@@ -103,10 +111,14 @@ green) → adversarial review (`forge:quality-/architecture-/security-/performan
 
 ## 7. Key paths / auth
 - **Integrator worktree:** `/Users/nik.zavgorodny/Dev/cloud-infra-wt-v2trunk` (on `v2`).
-- **Consumer preview worktrees** (currently portal→v2trunk): dataos
-  `/Users/nik.zavgorodny/Dev/monorepo-wt-v2-cloudrun-preview/dataos/infra` (stack `mutinex/dos/dev`); gcp-org
+- **Consumer preview worktrees:** admin-os (canary, ✅ gated clean — uses the PUBLISHED `@next` pkg, not portal)
+  `/Users/nik.zavgorodny/Dev/admin-os-wt-v2-preview/pulumi` (stacks `mutinex/admin-os/{dev,staging,prod}`);
+  dataos (portal→v2trunk) `/Users/nik.zavgorodny/Dev/monorepo-wt-v2-cloudrun-preview/dataos/infra` (stack
+  `mutinex/dos/dev`); gcp-org (portal→v2trunk)
   `/Users/nik.zavgorodny/Dev/gcp-organization-wt-v2-preview/{mtx,mtx-org}` (stacks `mtx/dev`, `mtx-org/prd`).
+  **Now that `@next` publishes, consumers can preview against the real published pkg (no portal/NODE_OPTIONS).**
 - **Auth (verified):** pulumi=`nzav`, gcloud=`nik.zavgorodny@mutiny.group`, `GITHUB_PACKAGES_TOKEN` present.
 - This handoff lives in BOTH the main checkout working tree (where a fresh session opens) AND committed on `v2` — keep both in sync.
 - Stale/merged worktrees from the rework may linger (e.g. `-nf-gate`, `-canary`, old `-g*`/`-ws-*`); prune with
-  `git worktree remove <path>` after confirming merged. Keep `-v2trunk` + the two consumer preview worktrees.
+  `git worktree remove <path>` after confirming merged. Keep `-v2trunk` + the three consumer preview worktrees
+  (admin-os, dataos, gcp-org).
