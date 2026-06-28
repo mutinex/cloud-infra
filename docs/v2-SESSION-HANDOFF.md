@@ -105,12 +105,17 @@ preview gate (needs creds agents lack) and does the merge.
 - **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
   AND committed on `v2`. Keep both updated.
 
-## 4. CURRENT STATE (v2 @ 6422996, pushed to origin/v2, 745 green — all PREVIEW-ONLY, no apply ever run)
-> Active program: `docs/v2-SIMPLIFICATION-PLAN.md`. Waves 1–3 DONE, gated zero-replace, and
-> review-team-cleared (all Critical/Major fixed in the Wave-3 consolidated fix pass, incl. the two
-> Waves-1–2 Majors: `AccessMatrixCases` back-compat restored + `/org` lazy config default). Next: Wave 4
-> (`CloudInfraService` capstone — additive; NO IAM on it). DEFERRED to a future major (can't be shimmed
-> losslessly): output-wire collapse + meta-first/getter hard-removal — they stay dual/deprecated.
+## 4. CURRENT STATE (v2 @ 8ebdae4, pushed to origin/v2, 762 green — all PREVIEW-ONLY, no apply ever run)
+> **API-SIMPLIFICATION PROGRAM COMPLETE** (`docs/v2-SIMPLIFICATION-PLAN.md`, Waves 1–4). Every wave
+> merged, zero-replace gated, and review-team-cleared (4 reviewers × each area; all Critical/Major fixed).
+> Delivered: access-matrix ergonomics + HIGH SA-prefix bug fix; one shared output key-grammar; name-first
+> everywhere incl. folder/pam/tag; uniform config Omit + `project` field + `labels`; `/org`+`/advanced`
+> subpaths w/ full root back-compat; `NamingMode`→flat flags; opt-in auto-label; single+bulk merged (URN-
+> preserving aliases); and the **`CloudInfraService`** convention layer (no IAM on it — IAM stays central).
+> DEFERRED to a future major (can't be shimmed losslessly): output-wire collapse, meta-first/getter hard-
+> removal, and the access-matrix enforcement layer (Phase 5).
+> **Next milestone: the SHIP path** — cut preview/prerelease packages off `v2` + canary the admin-app
+> repo against the simplified API (see `docs/v2-MIGRATION.md`). User decision; nothing applied yet.
 MERGED & validated:
 - **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
   (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases
