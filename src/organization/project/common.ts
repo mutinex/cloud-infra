@@ -99,7 +99,17 @@ export const CloudInfraProjectCustomConfigSchema = z
   .object({
     cloudInfraTags: z.array(PulumiInputStringSchema).optional(),
     services: z.array(z.string()).optional().default([]),
-    billingAccount: z.string().optional().default(gcpConfig.billingAccountId),
+    // LAZY default: `.default(gcpConfig.billingAccountId)` would read the throwing
+    // `billingAccountId` getter EAGERLY at module-construction time, so merely
+    // `import '@mutinex/cloud-infra/org'` would throw when `cloudInfra:billingAccountId`
+    // is unset. `.optional().transform(...)` defers the read to PARSE time (when a
+    // project config is actually validated). Resolved value is identical: when the
+    // caller omits `billingAccount` the configured account is substituted, exactly
+    // as `.default()` did; when set, the set value passes through unchanged.
+    billingAccount: z
+      .string()
+      .optional()
+      .transform(v => v ?? gcpConfig.billingAccountId),
     vpcHostProject: PulumiInputStringSchema.optional(),
   })
   .passthrough();
