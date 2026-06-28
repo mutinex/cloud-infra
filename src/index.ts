@@ -1,5 +1,6 @@
 export * from './core/meta';
 export * from './core/output';
+export * from './core/service';
 export * from './core/reference';
 export * from './config';
 export * from './components/account';
