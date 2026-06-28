@@ -205,6 +205,21 @@ describe('CloudInfraService — auto-register opt-out', () => {
     expect(Object.keys(optOutSvc.outputs())).toEqual([]);
   });
 
+  it('register-only opts still yield a byte-identical URN (opts stripped to undefined)', async () => {
+    // Passing ONLY `{ register: false }` must leave the component receiving
+    // `undefined` Pulumi opts (not `{}`), so its URN matches a no-opts direct
+    // construction. This pins the `hasComponentOpts` guard in `build`.
+    const optOnly = new CloudInfraService('opt2', {
+      domain: DOMAIN,
+      location: LOCATION,
+    }).bucket('assets', undefined, { register: false });
+
+    const urnOf = (r: pulumi.Resource): Promise<string> =>
+      new Promise(resolve => r.urn.apply(u => (resolve(u), u)));
+
+    expect(await urnOf(optOnly)).toBe(await urnOf(directBucket));
+  });
+
   it('default (no register flag) DOES register', () => {
     const onSvc = new CloudInfraService('on', {
       domain: DOMAIN,

@@ -102,7 +102,15 @@ import {
  * introduced.
  */
 export interface CloudInfraServiceArgs {
-  /** Org domain (`au` | `us` | `gl`). Inherited by every factory call. */
+  /**
+   * Org domain (`au` | `us` | `gl`). Inherited by every factory call.
+   *
+   * INTENTIONALLY REQUIRED here, even though the underlying
+   * {@link NamingArgs.domain} is optional: declaring the domain once is the
+   * whole ergonomic point of the service. A direct component caller may omit
+   * `domain` (falling back to project/meta defaults); the service forecloses
+   * that path by design and always folds an explicit `domain` under each call.
+   */
   domain: NamingArgs['domain'];
   /** Default GCP location/region for the service's regional components. */
   location?: NamingArgs['location'];
@@ -233,6 +241,15 @@ export class CloudInfraService {
   ): TComponent {
     // Shared naming merged UNDER the per-call args: a per-call key overrides the
     // shared default (`{ ...shared, ...perCall }`).
+    //
+    // The `as TArgs` assertion is SOUND, not just convenient: `args` is already
+    // typed `TArgs | undefined`, and `sharedNaming` only ever contributes
+    // OPTIONAL NamingArgs keys (domain/location/prefix/naming). Spreading it
+    // UNDER `args` can therefore only ADD optional keys — it can never drop or
+    // override a REQUIRED non-naming field, every one of which lives in `args`.
+    // (If a future edit ever routed required component data through
+    // `sharedNaming`, this assertion would silently mask the gap — keep
+    // required fields in the per-call `args`.)
     const mergedArgs = {
       ...this.sharedNaming,
       ...(args ?? {}),
