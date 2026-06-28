@@ -33,6 +33,123 @@ import {
 export const FLAT_KEY_SEPARATOR = '.';
 
 /**
+ * The POSITIVE charset every ADDRESSING segment (`domain`, `service`, `region`,
+ * `name`) of a flat-output key must match: letters, digits, `_` or `-` only —
+ * no separator, whitespace, control or unicode characters. Enforced by
+ * {@link composeFlatKey}; see its docs for why.
+ */
+const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * The addressing parts of a flat-output key, EXCLUSIVE of the trailing
+ * `<field>`. Together they form the key PREFIX
+ * `<domain>.<service>[.<region>].<name>` that the producer composes once per
+ * recorded resource and the consumer groups keys by. `region` is present iff
+ * the resource is regional.
+ */
+export interface FlatKeyAddress {
+  domain: string;
+  service: string;
+  region?: string;
+  name: string;
+}
+
+/**
+ * One fully-parsed flat-output key: its {@link FlatKeyAddress} plus the trailing
+ * `<field>`. Produced by {@link parseFlatKey}.
+ */
+export interface ParsedFlatKey extends FlatKeyAddress {
+  field: string;
+}
+
+/**
+ * Validates one ADDRESSING segment of a flat-output key against
+ * {@link SAFE_SEGMENT}, THROWING a descriptive error if it is unsafe.
+ *
+ * HARD INVARIANT: the key grammar is positional and the consumer
+ * ({@link parseFlatKey}) parses segments by count — so each addressing segment
+ * must be a SAFE token (no separator, whitespace, control, or unicode), or the
+ * round-trip silently corrupts (a dotted name would shift the region/name split;
+ * whitespace/unicode breaks a plain `requireOutput("<key>")`). This is the
+ * single producer-side gate; both the prefix segments and (defensively) the
+ * field pass through here.
+ */
+function assertSafeSegment(segName: string, segValue: string): void {
+  if (!SAFE_SEGMENT.test(segValue)) {
+    throw new Error(
+      `Invalid flat-output ${segName} segment '${segValue}': it must match ` +
+        `${SAFE_SEGMENT} (letters, digits, '_' or '-' only) — no separator ` +
+        `'${FLAT_KEY_SEPARATOR}', whitespace, control or unicode characters. ` +
+        `The flat-output key grammar ` +
+        `'<domain>.<service>[.<region>].<name>.<field>' is positional and is ` +
+        `read by a plain stack-output lookup, so an unsafe segment would ` +
+        `corrupt the consumer's parse.`
+    );
+  }
+}
+
+/**
+ * Composes the key PREFIX `<domain>.<service>[.<region>].<name>` from a
+ * {@link FlatKeyAddress}, validating every addressing segment first. This is the
+ * single place the producer turns addressing parts into a string — the consumer
+ * parses the same shape back via {@link parseFlatKey}.
+ */
+export function composeFlatKeyPrefix(address: FlatKeyAddress): string {
+  const sep = FLAT_KEY_SEPARATOR;
+  // `domain` (au/us/gl) and `service` (alias `[a-z0-9]+`) are already safe by
+  // construction; `name` (grouping key) is user-supplied and `region` is
+  // defensive — validate all four so an unsafe token throws here rather than
+  // emitting an un-parseable key.
+  assertSafeSegment('domain', address.domain);
+  assertSafeSegment('service', address.service);
+  if (address.region !== undefined) {
+    assertSafeSegment('region', address.region);
+  }
+  assertSafeSegment('name (grouping key)', address.name);
+  return address.region !== undefined
+    ? `${address.domain}${sep}${address.service}${sep}${address.region}${sep}${address.name}`
+    : `${address.domain}${sep}${address.service}${sep}${address.name}`;
+}
+
+/**
+ * Composes a full flat-output key `<domain>.<service>[.<region>].<name>.<field>`
+ * by appending `<field>` to the validated {@link composeFlatKeyPrefix}. The
+ * single producer-side composer; the consumer reverses it with
+ * {@link parseFlatKey}.
+ */
+export function composeFlatKey(address: FlatKeyAddress, field: string): string {
+  return `${composeFlatKeyPrefix(address)}${FLAT_KEY_SEPARATOR}${field}`;
+}
+
+/**
+ * Parses a flat-output key string back into its {@link ParsedFlatKey} parts, or
+ * returns `undefined` for a malformed key (wrong segment arity) the consumer
+ * should skip.
+ *
+ * The grammar is positional and parsed from BOTH ends so it tolerates neither
+ * dots in the `name`/`service` nor an unknown region: segment[0] is the domain,
+ * the LAST segment is the field, the SECOND-TO-LAST is the name, segment[1] is
+ * the service, and a 5-segment key carries the region at segment[2] (a
+ * 4-segment key has no region). Keys with any other segment count are malformed
+ * and yield `undefined`. The single consumer-side parser; the producer composes
+ * the same shape with {@link composeFlatKey}.
+ */
+export function parseFlatKey(key: string): ParsedFlatKey | undefined {
+  const seg = key.split(FLAT_KEY_SEPARATOR);
+  // Need at least domain.service.name.field (4) — optionally +region (5).
+  if (seg.length !== 4 && seg.length !== 5) {
+    return undefined;
+  }
+  return {
+    domain: seg[0],
+    service: seg[1],
+    region: seg.length === 5 ? seg[2] : undefined,
+    name: seg[seg.length - 2],
+    field: seg[seg.length - 1],
+  };
+}
+
+/**
  * The canonical `<full Pulumi type token> → <short service alias>` table used
  * to build the `service` segment of a flat-output key.
  *
@@ -94,13 +211,19 @@ export const serviceAliasMap: Record<string, string> = {
 
 /**
  * The REVERSE of {@link serviceAliasMap}: short service alias → full Pulumi
- * type. Built once at module load. The alias→type direction MUST be
- * unambiguous (each service segment maps to exactly one Pulumi type) — if two
- * types ever shared an alias the reverse would be lossy, so we THROW at load
- * rather than silently pick one. (The alias-coverage test independently pins
- * alias uniqueness; this is the runtime backstop the consumer relies on.)
+ * type. Built ONCE at module load, DERIVED from the single authored
+ * {@link serviceAliasMap} so the canonical alias→type direction can never drift
+ * from the type→alias direction. The alias→type direction MUST be unambiguous
+ * (each service segment maps to exactly one Pulumi type) — if two types ever
+ * shared an alias the reverse would be lossy, so we THROW at load rather than
+ * silently pick one. (The alias-coverage test independently pins alias
+ * uniqueness; this is the runtime backstop the consumer relies on.)
+ *
+ * `reference/config.resourceTypeMap` is BUILT from this map (plus a few extra
+ * user-facing convenience aliases), so there is no longer a hand-maintained
+ * second copy of the canonical alias⇄type pairs to keep in sync.
  */
-const serviceAliasToType: Record<string, string> = (() => {
+export const serviceAliasToType: Record<string, string> = (() => {
   const reverse: Record<string, string> = {};
   for (const [type, alias] of Object.entries(serviceAliasMap)) {
     const prior = reverse[alias];
