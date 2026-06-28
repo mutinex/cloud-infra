@@ -39,6 +39,11 @@ export { accessMatrixConfig } from '../../config';
 // Export principal resolver interface for extensibility
 export type { PrincipalResolver } from './principals/principal-types';
 
+// Named principal helpers (preferred, explicit-intent constructors). These are
+// sugar over the existing principal kinds and resolve to identical bindings.
+export { saMember, member, ref } from './principals/helpers';
+export type { RefArgs } from './principals/helpers';
+
 // Initialize the system on import
 if (!isInitialized()) {
   initializeIamBuilders();
