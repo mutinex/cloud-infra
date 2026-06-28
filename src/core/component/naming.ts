@@ -351,13 +351,11 @@ export function splitMetaArgs<TConfig>(
         delete combined[key];
       }
     }
-    // Narrow to a concrete arity so each resolveMeta overload matches. Both
-    // arms strip the identical NAMING_ARG_KEYS above; only the name shape differs.
-    const meta = Array.isArray(nameOrMeta)
-      ? resolveMeta(nameOrMeta, namingArgs)
-      : resolveMeta(nameOrMeta, namingArgs);
+    // `resolveMeta`'s string and string[] overloads both resolve the identical
+    // NAMING_ARG_KEYS (stripped above); the cast picks the array overload when
+    // `nameOrMeta` is a `string[]` and is otherwise a no-op for `string`.
     return {
-      meta,
+      meta: resolveMeta(nameOrMeta as string[], namingArgs),
       config: combined as TConfig,
     };
   }
