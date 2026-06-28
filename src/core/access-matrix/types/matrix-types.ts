@@ -148,8 +148,40 @@ export interface MatrixPolicyRule {
    * This is useful when the role is a `pulumi.Output<string>` (e.g., from a
    * StackReference), which cannot be used in a Pulumi resource name directly.
    * A label like "project-admin-role" makes the Pulumi preview more readable.
+   *
+   * A manual `label` ALWAYS wins over any auto-derived label (see `autoLabel`).
    */
   label?: string;
+
+  /**
+   * OPT-IN (default `false`). When `true` AND no manual `label` is set AND the
+   * `role` cannot produce a stable safe-role name at preview time (i.e. it is a
+   * `pulumi.Output<string>` that would otherwise fall back to the opaque,
+   * reorder-fragile `role-<ruleIndex>`), the access matrix derives a
+   * DETERMINISTIC, REORDER-STABLE safe-role segment instead.
+   *
+   * The derived value is computed from the resource component name plus a stable
+   * role hint ({@link roleHint} when provided, otherwise a stable hash of the
+   * role reference) — NEVER from the rule's array position — so reordering rules
+   * does not rename (and therefore does not destroy/recreate) the IAM binding.
+   *
+   * DEFAULT (`undefined`/`false`) is byte-identical to historical behavior: the
+   * `role-<ruleIndex>` fallback is preserved. Opting in is a conscious, one-time
+   * migration for the consuming stack.
+   */
+  autoLabel?: boolean;
+
+  /**
+   * Optional stable hint for the role, used ONLY by the {@link autoLabel} path
+   * when the role is an opaque `pulumi.Output<string>`. Mirrors the principal
+   * `__identifierHint` mechanism: a human-meaningful, stable token (e.g.
+   * `"org-project-admin"`) that names the role across reorders. When omitted and
+   * `autoLabel` is on, a stable hash of the role reference is used instead.
+   *
+   * Ignored entirely when `autoLabel` is off, when a manual `label` is set, or
+   * when the role already yields a stable name (string / `CloudInfraRole`).
+   */
+  roleHint?: string;
 }
 
 /**

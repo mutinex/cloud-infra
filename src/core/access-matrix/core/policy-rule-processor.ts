@@ -249,7 +249,9 @@ export class PolicyRuleProcessor {
     const safeRole = this.getSafeRoleName(
       rule.role,
       rule.label,
-      context.ruleIndex
+      context.ruleIndex,
+      rule,
+      componentName
     );
     const principalIdentifier =
       resolvedPrincipal.identifier || `principal-${context.principalIndex}`;
@@ -276,15 +278,32 @@ export class PolicyRuleProcessor {
   /**
    * Get a safe role name for resource naming.
    *
+   * Resolution order (the first three branches are FROZEN — byte-identical to
+   * historical behavior, see Frozen Contract F3):
+   *   1. explicit `label` (string)  → the label verbatim (wins over everything)
+   *   2. string role                → `role.replace(/^.*roles\//, '')`
+   *   3. `CloudInfraRole`           → `role.getMeta().getName()`
+   *   4. fallback                   → `role-${ruleIndex}` …UNLESS the rule has
+   *      opted in via `autoLabel`, in which case a deterministic, reorder-stable
+   *      derived label is returned instead (see {@link deriveStableRoleLabel}).
+   *
+   * The `autoLabel` divergence is reachable ONLY from branch 4: branches 1-3
+   * already yield stable, non-index names and are never altered. With `autoLabel`
+   * off (the default), this method is byte-identical to its previous form.
+   *
    * @param role - The role input
    * @param label - Optional label override
-   * @param ruleIndex - Rule index for fallback
+   * @param ruleIndex - Rule index for the (default) `role-${ruleIndex}` fallback
+   * @param rule - The full rule (for `autoLabel` / `roleHint` opt-in flags)
+   * @param componentName - Resolved resource component name (derived-label input)
    * @returns Safe role name for resource naming
    */
   private getSafeRoleName(
     role: MatrixRoleInput,
     label: string | undefined,
-    ruleIndex: number
+    ruleIndex: number,
+    rule?: MatrixPolicyRule,
+    componentName?: string
   ): string {
     if (label && typeof label === 'string') {
       return label;
@@ -302,7 +321,95 @@ export class PolicyRuleProcessor {
       }
     }
 
+    // OPT-IN: only when the consumer explicitly set `autoLabel` do we replace
+    // the opaque, reorder-fragile `role-${ruleIndex}` fallback with a stable
+    // derived label. Default (flag unset/false) preserves the exact fallback.
+    if (rule?.autoLabel === true) {
+      return this.deriveStableRoleLabel(role, rule.roleHint, componentName);
+    }
+
     return `role-${ruleIndex}`;
+  }
+
+  /**
+   * Derive a DETERMINISTIC, REORDER-STABLE safe-role segment for an opaque role
+   * (a `pulumi.Output<string>` with no usable name at preview time) when the
+   * rule opts in via `autoLabel`.
+   *
+   * The value is `auto-<component>-<roleHint-or-hash>`:
+   *   - `<component>` anchors the label to the target resource.
+   *   - `<roleHint>` is the consumer-supplied stable token when present
+   *     (sanitized), otherwise a stable 8-hex FNV-1a hash of the role reference's
+   *     stable string form.
+   *
+   * It is derived purely from the role reference and the resource name — NEVER
+   * from the rule's array index — so the same rule produces the same label
+   * regardless of its position among sibling rules (reorder-stable). It is a
+   * pure function of its inputs (deterministic; no `Date.now`/random).
+   *
+   * @param role - The opaque role input that hit the fallback branch
+   * @param roleHint - Optional consumer-supplied stable role token
+   * @param componentName - Resolved resource component name
+   * @returns A stable, sanitized safe-role segment
+   */
+  private deriveStableRoleLabel(
+    role: MatrixRoleInput,
+    roleHint: string | undefined,
+    componentName?: string
+  ): string {
+    const component = this.sanitizeLabelSegment(componentName) || 'resource';
+    const hint = roleHint && typeof roleHint === 'string'
+      ? this.sanitizeLabelSegment(roleHint)
+      : '';
+    const roleToken = hint || `role-${this.stableHash(this.roleRefString(role))}`;
+    return `auto-${component}-${roleToken}`;
+  }
+
+  /**
+   * Produce a STABLE string form of an opaque role reference for hashing. Uses
+   * any preview-time hint the Output carries (mirroring the principal
+   * `__identifierHint` mechanism), otherwise the role's own `toString()`. This
+   * never reads the array index, so it is reorder-stable.
+   */
+  private roleRefString(role: MatrixRoleInput): string {
+    if (role && typeof role === 'object') {
+      const hinted = role as { __identifierHint?: unknown };
+      if (typeof hinted.__identifierHint === 'string') {
+        return hinted.__identifierHint;
+      }
+    }
+    return String(role);
+  }
+
+  /**
+   * Deterministic 32-bit FNV-1a hash rendered as fixed 8-char lowercase hex.
+   * Pure (no time/random) → identical input always yields identical output, so
+   * the derived label is reorder-stable and reproducible across runs.
+   */
+  private stableHash(input: string): string {
+    let hash = 0x811c9dc5; // FNV offset basis
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      // FNV prime 16777619, kept in 32-bit space via Math.imul.
+      hash = Math.imul(hash, 0x01000193);
+    }
+    // >>> 0 → unsigned; pad to a fixed 8 hex chars for stable length.
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }
+
+  /**
+   * Sanitize a segment for use in a Pulumi logical resource name: lowercase,
+   * keep `[a-z0-9._-]`, collapse everything else to `-`, trim leading/trailing
+   * `-`. Deterministic and idempotent.
+   */
+  private sanitizeLabelSegment(value: string | undefined): string {
+    if (!value || typeof value !== 'string') {
+      return '';
+    }
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
   }
 
   /**
