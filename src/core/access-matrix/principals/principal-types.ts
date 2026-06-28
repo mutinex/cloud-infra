@@ -1,10 +1,12 @@
 import * as pulumi from '@pulumi/pulumi';
+import * as gcp from '@pulumi/gcp';
 import {
   MatrixPrincipalObject,
   ResourcePrincipal,
   OutputPrincipalWithHints,
   AllPrincipalTypes,
 } from '../types/matrix-types';
+import { hasMethod, hasProperty } from '../../helpers';
 import { ResolvedPrincipal } from '../types/common-types';
 import { CloudInfraReference, ReferenceWithoutDomain } from '../../reference';
 import { serviceAccountAliases } from '../../reference/config';
@@ -207,21 +209,119 @@ export class ResourcePrincipalResolver
     principal: ResourcePrincipal,
     principalIndex: number
   ): ResolvedPrincipal {
-    const emailOutput = this.extractEmail(principal);
-
-    if (!emailOutput) {
-      throw new Error(
-        `Unsupported inline principal object passed to CloudInfraAccessMatrix – cannot derive email from: ${JSON.stringify(principal)}`
-      );
-    }
-
-    const member = pulumi.interpolate`serviceAccount:${emailOutput}`;
+    const member = this.deriveMember(principal);
     const identifier = this.extractIdentifier(principal, principalIndex);
 
     return {
       member,
       identifier,
     };
+  }
+
+  /**
+   * Derive the IAM `member` for a resource principal by POSITIVELY determining
+   * its kind. The legacy behaviour ("anything exposing email/getEmail is a
+   * service account") silently mis-bound user/group resource principals as
+   * `serviceAccount:`. The order below is deliberate:
+   *
+   *  1. Service account (positive marker)  → `serviceAccount:${email}`
+   *     (byte-identical to the legacy SA path so existing SA bindings are
+   *     unchanged).
+   *  2. Recorded member (`member` / `getMember()`) → used verbatim, carrying
+   *     its own prefix (mirrors `MatrixObjectPrincipalResolver`, which trusts
+   *     the recorded `member` for non-SA resource types).
+   *  3. Otherwise → THROW (fail loud). We never default an
+   *     unidentifiable principal to `serviceAccount:`.
+   */
+  private deriveMember(principal: ResourcePrincipal): pulumi.Input<string> {
+    if (this.isServiceAccount(principal)) {
+      const emailOutput = this.extractEmail(principal);
+      if (!emailOutput) {
+        throw new Error(
+          `Service-account resource principal passed to CloudInfraAccessMatrix exposes no email/getEmail: ${this.describe(principal)}`
+        );
+      }
+      // Byte-identical to the historical SA path. Do NOT change.
+      return pulumi.interpolate`serviceAccount:${emailOutput}`;
+    }
+
+    // Non-SA: trust a recorded member (carries its own prefix, e.g. user:/group:).
+    const recordedMember = this.extractMember(principal);
+    if (recordedMember !== undefined) {
+      return recordedMember;
+    }
+
+    // Kind could not be positively determined — fail loud rather than guess SA.
+    throw new Error(
+      `Unsupported inline principal object passed to CloudInfraAccessMatrix – ` +
+        `cannot positively determine its IAM kind. A resource principal must ` +
+        `either be a service account (instance of gcp.serviceaccount.Account, ` +
+        `expose getServiceAccount(), or set principalKind:'serviceAccount') or ` +
+        `carry a pre-formatted member (member / getMember()) with an explicit ` +
+        `prefix such as 'user:' or 'group:'. Got: ${this.describe(principal)}`
+    );
+  }
+
+  /**
+   * Positive service-account detection. Returns true ONLY when the principal is
+   * unambiguously a service account, never as a fallback.
+   */
+  private isServiceAccount(principal: ResourcePrincipal): boolean {
+    // Direct GCP service account resource.
+    if (principal instanceof gcp.serviceaccount.Account) {
+      return true;
+    }
+
+    // CloudInfra SA component / any wrapper exposing getServiceAccount().
+    if (hasMethod(principal, 'getServiceAccount')) {
+      return true;
+    }
+
+    // Explicit kind marker.
+    if (
+      hasProperty(principal, 'principalKind') &&
+      typeof principal.principalKind === 'string' &&
+      principal.principalKind.toLowerCase() === 'serviceaccount'
+    ) {
+      return true;
+    }
+
+    // Pulumi type token (covers prototype-backed mocks and proxied resources
+    // where the instanceof check above may not fire).
+    if (
+      hasProperty(principal, '__pulumiType') &&
+      principal.__pulumiType === 'gcp:serviceaccount/account:Account'
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Extract a pre-formatted member string (carrying its own prefix) from a
+   * non-service-account resource principal.
+   */
+  private extractMember(
+    principal: ResourcePrincipal
+  ): pulumi.Input<string> | undefined {
+    if (principal.member !== undefined) {
+      return principal.member;
+    }
+
+    if (hasMethod(principal, 'getMember')) {
+      return (principal as Required<Pick<ResourcePrincipal, 'getMember'>>).getMember();
+    }
+
+    return undefined;
+  }
+
+  private describe(principal: ResourcePrincipal): string {
+    try {
+      return JSON.stringify(principal).substring(0, 200);
+    } catch {
+      return String(principal);
+    }
   }
 
   private extractEmail(

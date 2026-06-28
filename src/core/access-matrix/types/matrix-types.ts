@@ -36,10 +36,39 @@ export type MatrixPrincipalInput = z.infer<typeof MatrixPrincipalSchema>;
 
 /**
  * Interface for resource-based principals (service accounts, etc.)
+ *
+ * A resource principal is any object that can be turned into an IAM `member`
+ * string. Historically this only covered service accounts (anything exposing
+ * `email` / `getEmail`), and was unconditionally bound as `serviceAccount:…`.
+ * That mis-bound non-SA resource principals; see
+ * {@link ResourcePrincipalResolver}. The kind is now resolved POSITIVELY:
+ *  - a service account (instance / `getServiceAccount()` / explicit kind marker)
+ *    keeps the byte-identical `serviceAccount:${email}` member, OR
+ *  - a recorded `member` / `getMember()` carries its own (`user:`, `group:`, …)
+ *    prefix and is used verbatim.
+ * If neither holds the resolver throws (fail loud) rather than defaulting to SA.
  */
 export interface ResourcePrincipal {
   email?: pulumi.Input<string>;
   getEmail?(): pulumi.Input<string>;
+  /**
+   * Pre-formatted IAM member string (carries its own prefix, e.g. `user:…`,
+   * `group:…`, `serviceAccount:…`). When present on a non-service-account
+   * resource principal this is used verbatim as the member.
+   */
+  member?: pulumi.Input<string>;
+  getMember?(): pulumi.Input<string>;
+  /**
+   * Returns the GCP service account this resource principal wraps. Presence of
+   * this method is a POSITIVE marker that the principal is a service account.
+   */
+  getServiceAccount?(): unknown;
+  /**
+   * Explicit kind marker for the IAM member prefix (e.g. `serviceAccount`,
+   * `user`, `group`, `domain`, `principal`, `principalSet`). When set it is
+   * authoritative.
+   */
+  principalKind?: string;
   getName?(): string;
   meta?: {
     getName?(): string;
