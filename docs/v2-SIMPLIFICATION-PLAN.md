@@ -62,3 +62,7 @@ IAM stays in the central access-matrix module.
 Access-matrix guardrails to "earn" the chokepoint: deny/opt-in public principals
 (`allUsers`/`allAuthenticatedUsers`), deny primitive roles by default, a policy hook (OPA/conftest),
 external/cross-org principal detection, an audit-manifest output. Parked until the simplification lands.
+
+## Progress log
+- **Wave 1 — DONE & merged @ `941a04a`, 522 tests, zero-replace gate PASSED** (dataos/dev, mtx/dev, mtx-org/prd; only the known `1customer` delete). WS-A access-matrix (HIGH SA-prefix bug fixed forward — SA output byte-identical, fail-loud on non-SA; `createAccessMatrix` root export; use-case-shape collapse; `saMember`/`member`/`ref` helpers; central `grant()` one-liner). WS-B one shared typed key-grammar (output keys byte-identical). WS-C name-first for folder/pam/tag, uniform `ComponentConfig` Omit, `project` field unify (deprecated aliases), uniform `labels`, hoisted constructor-split helper.
+  - **Carry-forward residuals:** (1) name-first `CloudInfraEntitlement` (pam) cannot set GCP-API `location` (type-incompat with `NamingArgs.location`) — meta-first is the escape hatch; (2) the subnet/connector/nat `ComponentConfig` Omit turns a previously-silently-ignored `region`/`name`/`project` config field into a consumer COMPILE error on upgrade (codemod/migration note); (3) NAT nested `router` arm still exposes raw meta-managed fields (follow-up sweep).

@@ -105,7 +105,10 @@ preview gate (needs creds agents lack) and does the merge.
 - **This handoff doc lives in BOTH** the main checkout working tree (where a fresh session opens)
   AND committed on `v2`. Keep both updated.
 
-## 4. CURRENT STATE (v2 @ e018f9c, pushed to origin/v2, 450 green — all PREVIEW-ONLY, no apply ever run)
+## 4. CURRENT STATE (v2 @ 941a04a, pushed to origin/v2, 522 green — all PREVIEW-ONLY, no apply ever run)
+> Active program: `docs/v2-SIMPLIFICATION-PLAN.md` (waves 1–4). Wave 1 DONE & gated (access-matrix
+> ergonomics + HIGH SA-prefix bug fix, output/reference shared key-grammar, construction ergonomics +
+> name-first for folder/pam/tag). Next: Wave 2 (public-surface shrink).
 MERGED & validated:
 - **Phase 1** — all ~20 components converted to `pulumi.ComponentResource`; uniform labels
   (per-child opt-in, merged into args — no transform inheritance); non-destructive aliases
