@@ -5,8 +5,9 @@
  *
  *  1. **Byte-identical** — a factory-produced component is indistinguishable
  *     from the equivalent DIRECT name-first construction: identical generated
- *     name (F1), identical component-node URN, and identical captured child
- *     resource (type + generated name + key args).
+ *     name (F1) and identical component-node URN (which encodes type + name +
+ *     parent). The factory only forwards `{ ...sharedNaming, ...perCallArgs }`
+ *     to the same name-first constructor, so the resource args cannot diverge.
  *  2. **Auto-registration** — each factory auto-registers its component into the
  *     service's internal output manager, so the resource appears in
  *     `svc.outputs()` under the SAME flat key the equivalent direct
@@ -22,20 +23,12 @@ import * as pulumi from '@pulumi/pulumi';
 
 pulumi.runtime.setConfig('gcp:project', 'test-project');
 
-interface CapturedResource {
-  type: string;
-  name: string;
-  inputs: Record<string, unknown>;
-}
-const captured: CapturedResource[] = [];
-
 pulumi.runtime.setMocks(
   {
     newResource(args: pulumi.runtime.MockResourceArgs): {
       id: string;
       state: Record<string, unknown>;
     } {
-      captured.push({ type: args.type, name: args.name, inputs: args.inputs });
       return {
         id: `${args.name}-id`,
         state: { ...args.inputs, name: args.inputs.name ?? args.name },
