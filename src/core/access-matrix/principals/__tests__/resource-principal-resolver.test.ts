@@ -110,6 +110,18 @@ describe('ResourcePrincipalResolver — positive kind resolution', () => {
       expect(member.startsWith('serviceAccount:')).toBe(false);
     });
 
+    it('THROWS for a non-SA principal with an explicit null member (does not emit a malformed binding)', () => {
+      const badMember = {
+        email: 'mystery@example.com',
+        member: null,
+        __name: 'mystery',
+      } as unknown as ResourcePrincipal;
+
+      expect(() => resolver.resolve(badMember, 0)).toThrow(
+        /cannot positively determine its IAM kind/
+      );
+    });
+
     it('THROWS for a non-SA principal whose kind cannot be positively determined (never defaults to serviceAccount:)', () => {
       // email-only, no SA marker, no recorded member → must fail loud.
       const ambiguous: ResourcePrincipal = {

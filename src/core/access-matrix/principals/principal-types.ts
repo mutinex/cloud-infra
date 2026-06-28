@@ -228,8 +228,9 @@ export class ResourcePrincipalResolver
    *     (byte-identical to the legacy SA path so existing SA bindings are
    *     unchanged).
    *  2. Recorded member (`member` / `getMember()`) → used verbatim, carrying
-   *     its own prefix (mirrors `MatrixObjectPrincipalResolver`, which trusts
-   *     the recorded `member` for non-SA resource types).
+   *     its own prefix. Analogous to how `MatrixObjectPrincipalResolver` trusts
+   *     its derived member for non-SA resource types (it rebuilds the member
+   *     from a CloudInfraReference rather than reading these fields).
    *  3. Otherwise → THROW (fail loud). We never default an
    *     unidentifiable principal to `serviceAccount:`.
    */
@@ -305,7 +306,9 @@ export class ResourcePrincipalResolver
   private extractMember(
     principal: ResourcePrincipal
   ): pulumi.Input<string> | undefined {
-    if (principal.member !== undefined) {
+    // Treat null like absent so a misshapen `member: null` falls through to the
+    // fail-loud throw rather than emitting a malformed binding.
+    if (principal.member !== undefined && principal.member !== null) {
       return principal.member;
     }
 
