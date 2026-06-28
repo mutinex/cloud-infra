@@ -51,6 +51,7 @@ pulumi.runtime.setMocks(
 import { CloudInfraMeta } from '../../../core/meta';
 import { CloudInfraBucket, BUCKET_TYPE, BUCKET_BULK_TYPE } from '../single';
 import { CloudInfraBulkBucket, BULK_BUCKET_TYPE } from '../bulk';
+import { ValidationError } from '../../../core/errors';
 
 const T_BUCKET = 'gcp:storage/bucket:Bucket';
 
@@ -90,6 +91,7 @@ describe('W3-C — merged CloudInfraBucket single/bulk/alias equivalence', () =>
   let alias_meta_arr: CloudInfraBulkBucket;
   let custom_merged: CloudInfraBucket;
   let custom_alias: CloudInfraBulkBucket;
+  let reverse_sorted: CloudInfraBucket;
 
   beforeAll(async () => {
     // Single arity (string + meta-first single).
@@ -121,6 +123,10 @@ describe('W3-C — merged CloudInfraBucket single/bulk/alias equivalence', () =>
       forceDestroy: false,
       custom: { logs: { forceDestroy: true } },
     });
+
+    // Reverse-sorted inputs to pin the bucket label SORT order (the frozen
+    // asymmetry vs CloudInfraAccount which joins in insertion order).
+    reverse_sorted = new CloudInfraBucket(['logs', 'assets'], { domain: 'au' });
 
     await waitForCaptures();
   });
@@ -189,8 +195,28 @@ describe('W3-C — merged CloudInfraBucket single/bulk/alias equivalence', () =>
     expect(await fd(custom_alias, 'assets')).toBe(false);
   });
 
-  it('bulk no-arg single accessor throws (clear DX error)', () => {
-    expect(() => merged_arr.getBucket()).toThrow();
+  it('bulk component label SORTS its keys (not insertion) — frozen asymmetry', () => {
+    // Bucket label = Object.keys(names).sort().join('-'); ['logs','assets'] →
+    // sorted → 'assets-logs'. (Contrast: account joins in INSERTION order then
+    // appends '-accounts' → 'global-primary-accounts'.) getBuckets() keeps the
+    // INPUT (insertion) key order regardless — only the node label sorts.
+    expect(reverse_sorted.getGeneratedName()).toBe('assets-logs');
+    expect(Object.keys(reverse_sorted.getBuckets())).toEqual(['logs', 'assets']);
+  });
+
+  it('bulk no-arg single accessor throws a ValidationError (op/message), not just any error', () => {
+    expect(() => merged_arr.getBucket()).toThrow(ValidationError);
+    try {
+      merged_arr.getBucket();
+      throw new Error('expected getBucket() to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError);
+      const ve = err as ValidationError;
+      expect(ve.component).toBe('bucket');
+      expect(ve.operation).toBe('getBucket');
+      expect(ve.message).toContain('getBucket');
+      expect(ve.message).toContain('bulk');
+    }
   });
 
   it('child bucket resources were captured', () => {

@@ -57,6 +57,7 @@ import {
 import { CloudInfraBulkAccount, BULK_ACCOUNT_TYPE } from '../bulk';
 import { PrincipalFactory } from '../../../core/access-matrix/principals/principal-factory';
 import { ResourcePrincipalResolver } from '../../../core/access-matrix/principals/principal-types';
+import { ValidationError } from '../../../core/errors';
 
 const T_SA = 'gcp:serviceaccount/account:Account';
 
@@ -96,6 +97,7 @@ describe('W3-C — merged CloudInfraAccount single/bulk/alias equivalence', () =
   let alias_meta_arr: CloudInfraBulkAccount;
   let custom_merged: CloudInfraAccount;
   let custom_alias: CloudInfraBulkAccount;
+  let reverse_sorted: CloudInfraAccount;
 
   beforeAll(async () => {
     single_name = new CloudInfraAccount('app', { domain: 'au' });
@@ -124,6 +126,12 @@ describe('W3-C — merged CloudInfraAccount single/bulk/alias equivalence', () =
       domain: 'au',
       description: 'shared',
       custom: { global: { description: 'different' } },
+    });
+
+    // Reverse-sorted inputs to pin the account label join order (INSERTION, not
+    // sorted — the frozen asymmetry vs CloudInfraBucket which sorts).
+    reverse_sorted = new CloudInfraAccount(['global', 'primary'], {
+      domain: 'au',
     });
 
     await waitForCaptures();
@@ -190,8 +198,31 @@ describe('W3-C — merged CloudInfraAccount single/bulk/alias equivalence', () =
     expect(Object.keys(single_name.serviceAccounts)).toEqual(['app']);
   });
 
-  it('bulk no-arg single accessor throws (clear DX error)', () => {
-    expect(() => merged_arr.getServiceAccount()).toThrow();
+  it('bulk component label preserves INSERTION join order (not sorted) — frozen asymmetry', () => {
+    // Account joins input names in INSERTION order then appends '-accounts';
+    // ['global','primary'] → 'global-primary-accounts'. (Contrast: bucket SORTS
+    // its keys — ['logs','assets'] → 'assets-logs'.) Pinning this asymmetry
+    // guards the frozen component-node label/URN.
+    expect(reverse_sorted.getGeneratedName()).toBe('global-primary-accounts');
+    expect(Object.keys(reverse_sorted.getAccounts())).toEqual([
+      'global',
+      'primary',
+    ]);
+  });
+
+  it('bulk no-arg single accessor throws a ValidationError (op/message), not just any error', () => {
+    expect(() => merged_arr.getServiceAccount()).toThrow(ValidationError);
+    try {
+      merged_arr.getServiceAccount();
+      throw new Error('expected getServiceAccount() to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ValidationError);
+      const ve = err as ValidationError;
+      expect(ve.component).toBe('account');
+      expect(ve.operation).toBe('getServiceAccount');
+      expect(ve.message).toContain('getServiceAccount');
+      expect(ve.message).toContain('bulk');
+    }
   });
 
   it('alias getIamMembers() returns the record shape', () => {
