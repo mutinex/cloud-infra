@@ -42,6 +42,12 @@ export const CloudInfraNatConfigSchema = z
 
 export interface CloudInfraNatConfig
   extends ComponentConfig<Omit<gcp.compute.RouterNatArgs, 'router'>> {
+  // The nested `router` is intentionally left as the RAW `gcp.compute.RouterArgs`
+  // (NOT wrapped in ComponentConfig): `createRouter` derives the router's name
+  // from `resourceName` and overwrites `region` from meta, so a caller-supplied
+  // `router.name`/`router.region`/`router.project` is ignored. Tightening that
+  // nested arm is a deliberate follow-up; the top-level surface is what this
+  // task tightened.
   router: gcp.compute.RouterArgs;
 }
 

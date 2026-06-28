@@ -190,6 +190,11 @@ export function resolveMeta(
  * out of its combined args object before forwarding the remainder as the
  * component config. Centralised here so the {@link splitMetaArgs} helper and any
  * future consumer share ONE source of truth.
+ *
+ * Distinct from `MetaManagedField` in `config.ts`: this is the RUNTIME set
+ * stripped off and routed to the meta; that is the TYPE-LEVEL set removed from
+ * the public config surface. They overlap only on `location` and are
+ * deliberately disjoint in purpose.
  */
 const NAMING_ARG_KEYS = ['domain', 'location', 'prefix', 'naming'] as const;
 

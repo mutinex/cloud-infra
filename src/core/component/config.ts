@@ -25,8 +25,17 @@ import type * as pulumi from '@pulumi/pulumi';
  * - `name`     – the generated resource name (`meta.getName()`).
  * - `location` – meta location input (naming); never a raw resource field here.
  * - `region`   – derived from `meta.getRegion()`.
- * - `zone`     – derived from the meta zone / zonal-name logic.
+ * - `zone`     – derived from the meta zone / zonal-name logic. NB: the zonal
+ *               naming sweep is a deliberate follow-up (see `naming.ts` header),
+ *               so for today's flat/regional adopters this Omit of an absent
+ *               `zone` is inert — the field is listed for forward-consistency.
  * - `project`  – meta-managed; re-added as OPTIONAL via {@link ComponentConfig}.
+ *
+ * Distinct from the `NAMING_ARG_KEYS` set in `naming.ts`: that set is the RUNTIME
+ * list of {@link NamingArgs} keys `splitMetaArgs` strips off and routes to the
+ * meta (`domain`/`location`/`prefix`/`naming`); THIS set is the TYPE-LEVEL list
+ * of resource-arg fields removed from the public config surface. They overlap
+ * only on `location` and are deliberately disjoint in purpose.
  */
 export type MetaManagedField = 'name' | 'project' | 'location' | 'region' | 'zone';
 

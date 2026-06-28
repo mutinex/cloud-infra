@@ -47,6 +47,7 @@ pulumi.runtime.setMocks(
 import { CloudInfraRole } from '../index';
 
 const T_PROJECT_ROLE = 'gcp:projects/iAMCustomRole:IAMCustomRole';
+const T_ORG_ROLE = 'gcp:organizations/iAMCustomRole:IAMCustomRole';
 
 async function waitForRoleResources(expected: number): Promise<void> {
   for (let i = 0; i < 300; i++) {
@@ -57,6 +58,13 @@ async function waitForRoleResources(expected: number): Promise<void> {
   }
 }
 
+async function waitForOrgRole(): Promise<void> {
+  for (let i = 0; i < 300; i++) {
+    await new Promise(r => setTimeout(r, 10));
+    if (captured.some(r => r.type === T_ORG_ROLE)) return;
+  }
+}
+
 const basePerms = { title: 'Tester', permissions: ['resourcemanager.projects.get'] };
 
 describe('WS-C Task 3 — CloudInfraRole project field + deprecated aliases', () => {
@@ -64,6 +72,7 @@ describe('WS-C Task 3 — CloudInfraRole project field + deprecated aliases', ()
   let role_projectId: CloudInfraRole;
   let role_gcpProject: CloudInfraRole;
   let role_precedence: CloudInfraRole;
+  let role_org: CloudInfraRole;
 
   beforeAll(async () => {
     role_project = new CloudInfraRole('viewer-a', {
@@ -89,9 +98,19 @@ describe('WS-C Task 3 — CloudInfraRole project field + deprecated aliases', ()
       gcpProject: 'lose-proj-2',
       ...basePerms,
     });
+    // Org-level role: the org arm builds its args from an explicit allowlist
+    // (orgId/roleId/title/permissions/description), so no project/alias key can
+    // leak even though the org config carries none of them.
+    role_org = new CloudInfraRole('org-admin', {
+      naming: 'no-location',
+      orgId: '123456',
+      title: 'OrgAdmin',
+      permissions: ['resourcemanager.projects.get'],
+    });
     // Each role creates the IAMCustomRole inside a permissions-filter apply, so
-    // wait until all 4 project-level roles have been captured.
+    // wait until all 4 project-level + 1 org-level role have been captured.
     await waitForRoleResources(4);
+    await waitForOrgRole();
   });
 
   // `no-location` naming → `prefix-name` = `project-<inputName>`.
@@ -112,12 +131,24 @@ describe('WS-C Task 3 — CloudInfraRole project field + deprecated aliases', ()
     expect(projectInputFor('project-viewer-d')).toBe('win-proj');
   });
 
-  it('no alias key leaks into the emitted resource args', () => {
+  it('no alias key leaks into the emitted project-role args', () => {
     const rec = captured.find(
       r => r.type === T_PROJECT_ROLE && r.name === 'project-viewer-a'
     );
     expect(rec).toBeDefined();
     expect('projectId' in (rec!.inputs as object)).toBe(false);
     expect('gcpProject' in (rec!.inputs as object)).toBe(false);
+  });
+
+  it('org-role args carry no project/alias key (allowlist-constructed)', () => {
+    expect(role_org).toBeDefined();
+    const rec = captured.find(r => r.type === T_ORG_ROLE);
+    expect(rec).toBeDefined();
+    const inputs = rec!.inputs as object;
+    expect('project' in inputs).toBe(false);
+    expect('projectId' in inputs).toBe(false);
+    expect('gcpProject' in inputs).toBe(false);
+    // The org role is keyed by orgId, not project.
+    expect((rec!.inputs as { orgId?: unknown }).orgId).toBe('123456');
   });
 });
