@@ -312,3 +312,14 @@ describe('public surface — /advanced subpath exports the advanced tier (§3)',
     expect(advanced[sym]).toBeDefined();
   });
 });
+
+describe('public surface — Wave 4 additive root export (CloudInfraService)', () => {
+  // The W4 capstone adds CloudInfraService to the ROOT (primary surface). This
+  // is purely ADDITIVE — it does not appear in the frozen legacy list above
+  // (which stays at 135), but the new primary-surface symbol must resolve from
+  // the package root and be a usable class.
+  it('root exports CloudInfraService (additive primary surface)', () => {
+    expect(root['CloudInfraService']).toBeDefined();
+    expect(typeof root['CloudInfraService']).toBe('function');
+  });
+});
