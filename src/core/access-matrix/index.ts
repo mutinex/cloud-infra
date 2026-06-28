@@ -44,6 +44,12 @@ export type { PrincipalResolver } from './principals/principal-types';
 export { saMember, member, ref } from './principals/helpers';
 export type { RefArgs } from './principals/helpers';
 
+// One-liner IAM grant — single-rule CloudInfraAccessMatrix with byte-identical
+// resource names. The matrix engine with a smaller hat (the centralized IAM
+// path; no IAM methods are added to resource components).
+export { grant } from './grant';
+export type { GrantOptions } from './grant';
+
 // Initialize the system on import
 if (!isInitialized()) {
   initializeIamBuilders();
