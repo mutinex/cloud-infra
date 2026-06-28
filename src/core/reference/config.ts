@@ -18,10 +18,6 @@ export const connectorAliases = ['connector'] as const;
 export const projectAliases = ['project'] as const;
 export const tagAliases = ['tag'] as const;
 export const folderAliases = ['folder'] as const;
-export const entitlementAliases = ['entitlement', 'pam'] as const;
-export const secretAliases = ['secret'] as const;
-export const secretVersionAliases = ['secretversion'] as const;
-export const certificateMapAliases = ['certmap'] as const;
 export const cloudRunAliases = ['cloudrun'] as const;
 
 /**

@@ -55,11 +55,14 @@ export interface FlatKeyAddress {
 }
 
 /**
- * One fully-parsed flat-output key: its {@link FlatKeyAddress} plus the trailing
- * `<field>`. Produced by {@link parseFlatKey}.
+ * One fully-parsed flat-output key: its {@link FlatKeyAddress}, the trailing
+ * `<field>`, and the addressing `prefix` (`<domain>.<service>[.<region>].<name>`
+ * — the key with its final `.<field>` segment removed) the consumer groups by.
+ * Produced by {@link parseFlatKey}.
  */
 export interface ParsedFlatKey extends FlatKeyAddress {
   field: string;
+  prefix: string;
 }
 
 /**
@@ -146,6 +149,10 @@ export function parseFlatKey(key: string): ParsedFlatKey | undefined {
     region: seg.length === 5 ? seg[2] : undefined,
     name: seg[seg.length - 2],
     field: seg[seg.length - 1],
+    // The addressing prefix is the key minus its final `.<field>` segment —
+    // a pure re-join of the SAME split, so grouping never re-validates or
+    // re-throws on already-emitted wire data.
+    prefix: seg.slice(0, seg.length - 1).join(FLAT_KEY_SEPARATOR),
   };
 }
 

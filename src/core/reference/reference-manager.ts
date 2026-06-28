@@ -8,7 +8,6 @@ import {
   resourceTypeMap,
   getServiceAlias,
   getTypeForServiceAlias,
-  FLAT_KEY_SEPARATOR,
   parseFlatKey,
 } from './config';
 import type {
@@ -469,14 +468,11 @@ export class CloudInfraReference {
       // Malformed (wrong-arity) keys parse to `undefined` and are skipped.
       const parsed = parseFlatKey(key);
       if (parsed === undefined) continue;
-      const { domain, service, region, name, field } = parsed;
+      const { domain, service, region, name, field, prefix } = parsed;
 
-      // Group by the addressing prefix (everything before `<field>`): the key
-      // with its final `.<field>` segment removed. Derive it positionally from
-      // the SAME split the grammar used, so the read path stays a pure
-      // re-grouping (no validation/throw on already-emitted wire data).
-      const lastSep = key.lastIndexOf(FLAT_KEY_SEPARATOR);
-      const prefix = key.slice(0, lastSep);
+      // Group by the addressing prefix supplied by the grammar parser (the key
+      // minus its `.<field>`), so the consumer never re-splits or re-slices a
+      // key itself — the grammar is the single parser of record.
       let group = byPrefix.get(prefix);
       if (!group) {
         group = { domain, service, region, name, record: {} };
