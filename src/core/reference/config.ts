@@ -32,11 +32,16 @@ export const cloudRunAliases = ['cloudrun'] as const;
  * additional human-friendly synonym the reader also accepts.)
  */
 const EXTRA_TYPE_ALIASES: Record<string, string> = {
-  gcs: 'gcp:storage:Bucket',
-  serviceaccount: 'gcp:serviceaccount:Account',
-  account: 'gcp:serviceaccount:Account',
-  pam: 'gcp:privilegedaccessmanager:Entitlement',
-  cloudrun: 'gcp:cloudrunv2:Service',
+  // Targets defined BY REFERENCE to the canonical reverse map, NOT by restated
+  // string literals: a rename of the underlying type in `serviceAliasMap`
+  // propagates here automatically, and a removed/renamed canonical alias makes
+  // the lookup `undefined` so the collision guard below throws loud rather than
+  // silently pointing a synonym at a stale type.
+  gcs: serviceAliasToType['bucket'],
+  serviceaccount: serviceAliasToType['sa'],
+  account: serviceAliasToType['sa'],
+  pam: serviceAliasToType['entitlement'],
+  cloudrun: serviceAliasToType['run'],
 };
 
 /**
@@ -46,11 +51,35 @@ const EXTRA_TYPE_ALIASES: Record<string, string> = {
  * {@link EXTRA_TYPE_ALIASES} convenience synonyms. There is no longer a
  * hand-maintained second table restating the canonical alias⇄type pairs, so the
  * producer's key segment and the consumer's `{ type }` filter cannot diverge.
+ *
+ * Built ONCE at module load with a THROW-ON-COLLISION guard (mirroring the
+ * {@link serviceAliasToType} IIFE): if an {@link EXTRA_TYPE_ALIASES} synonym ever
+ * collides with a DIFFERENT canonical alias→type pair, OR references a canonical
+ * alias that no longer resolves (a rename left a dangling `undefined`), we fail
+ * loud at load rather than silently shadowing or emitting a broken mapping.
  */
-export const resourceTypeMap: Record<string, string> = {
-  ...serviceAliasToType,
-  ...EXTRA_TYPE_ALIASES,
-};
+export const resourceTypeMap: Record<string, string> = (() => {
+  const map: Record<string, string> = { ...serviceAliasToType };
+  for (const [alias, type] of Object.entries(EXTRA_TYPE_ALIASES)) {
+    if (type === undefined) {
+      throw new Error(
+        `EXTRA_TYPE_ALIASES synonym '${alias}' references a canonical service ` +
+          `alias that no longer resolves in serviceAliasToType (likely a type ` +
+          `rename). Update the reference in reference/config.ts.`
+      );
+    }
+    const prior = map[alias];
+    if (prior !== undefined && prior !== type) {
+      throw new Error(
+        `Ambiguous resourceTypeMap alias '${alias}': mapped to both '${prior}' ` +
+          `and '${type}'. A '{ type }' disambiguator alias must resolve to ` +
+          `exactly one Pulumi type; remove the conflicting entry.`
+      );
+    }
+    map[alias] = type;
+  }
+  return map;
+})();
 
 /**
  * The flat-output KEY GRAMMAR now lives in the NEUTRAL module
