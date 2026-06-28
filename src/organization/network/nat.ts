@@ -20,6 +20,7 @@ import {
   CloudInfraComponent,
   splitMetaArgs,
   type NamingArgs,
+  type ComponentConfig,
 } from '../../core/component';
 
 /** Pulumi type token for the NAT component. */
@@ -40,7 +41,7 @@ export const CloudInfraNatConfigSchema = z
   .passthrough();
 
 export interface CloudInfraNatConfig
-  extends Omit<gcp.compute.RouterNatArgs, 'router'> {
+  extends ComponentConfig<Omit<gcp.compute.RouterNatArgs, 'router'>> {
   router: gcp.compute.RouterArgs;
 }
 
