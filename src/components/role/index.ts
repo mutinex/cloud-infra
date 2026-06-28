@@ -32,7 +32,22 @@ export type CloudInfraProjectRoleConfig = Omit<
   gcp.projects.IAMCustomRoleArgs,
   'project' | 'roleId' | 'permissions'
 > & {
+  /**
+   * GCP project the custom role is created in. Canonical project field (v2
+   * uniform `project` surface). Defaults to `meta.getGcpProject()` when omitted.
+   */
+  project?: pulumi.Input<string>;
+  /**
+   * @deprecated Use `project`. Retained as an alias that resolves to the SAME
+   * project value (and the same resource). `project` wins if both are set.
+   */
   projectId?: pulumi.Input<string>;
+  /**
+   * @deprecated Use `project`. Alias for symmetry with `CloudInfraMeta`'s
+   * `gcpProject`; resolves to the SAME project value. `project`/`projectId` win
+   * over this if set.
+   */
+  gcpProject?: pulumi.Input<string>;
   permissions?: string[];
   excluded?: string[];
   roles?: Array<string | CloudInfraRole>;
@@ -165,11 +180,24 @@ export class CloudInfraRole extends CloudInfraComponent {
       cloudInfraConfig.orgId !== undefined &&
       cloudInfraConfig.orgId !== '';
 
+    // Resolve the project from the canonical `project` field, falling back to
+    // the `@deprecated` `projectId` / `gcpProject` aliases, then to the meta
+    // project. Precedence: project > projectId > gcpProject > meta. Existing
+    // `projectId`-only callers resolve to the IDENTICAL value (byte-identical
+    // resource); the new `project` field is purely additive.
+    const projectConfig = cloudInfraConfig as {
+      project?: pulumi.Input<string>;
+      projectId?: pulumi.Input<string>;
+      gcpProject?: pulumi.Input<string>;
+    };
+    const explicitProject =
+      ('project' in projectConfig ? projectConfig.project : undefined) ??
+      ('projectId' in projectConfig ? projectConfig.projectId : undefined) ??
+      ('gcpProject' in projectConfig ? projectConfig.gcpProject : undefined);
+
     const projectId: pulumi.Input<string> = isOrgRole
       ? undefined!
-      : (('projectId' in cloudInfraConfig
-          ? cloudInfraConfig.projectId
-          : undefined) ?? meta.getGcpProject());
+      : (explicitProject ?? meta.getGcpProject());
 
     const orgIdResolved =
       isOrgRole && 'orgId' in cloudInfraConfig
