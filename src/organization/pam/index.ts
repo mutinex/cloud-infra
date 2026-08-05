@@ -108,10 +108,22 @@ export class CloudInfraEntitlement {
    * • `approvalWorkflow.manualApprovals.*` is auto-filled via
    *   {@link transformApprovalWorkflow}.
    * • `requesterJustificationConfig` defaults to `{ unstructured: {} }`.
+   *
+   * @param opts Optional Pulumi resource options, passed through to the
+   * underlying `gcp.privilegedaccessmanager.Entitlement`. Typed as
+   * `CustomResourceOptions` rather than `ResourceOptions` so callers can reach
+   * `deleteBeforeReplace`, `protect` and `ignoreChanges`.
+   *
+   * `deleteBeforeReplace` is worth knowing about here: entitlements are
+   * identified by name, so any replacing change (removing an `approvalWorkflow`,
+   * for instance) fails with `409 ... already exists` under Pulumi's default
+   * create-before-delete. Callers making such a change should pass
+   * `{ deleteBeforeReplace: true }`.
    */
   constructor(
     meta: CloudInfraMeta,
-    cloudInfraConfig: CloudInfraEntitlementConfig = {}
+    cloudInfraConfig: CloudInfraEntitlementConfig = {},
+    opts?: pulumi.CustomResourceOptions
   ) {
     CloudInfraLogger.info('Initializing PAM entitlement component', {
       component: 'pam-entitlement',
@@ -170,7 +182,8 @@ export class CloudInfraEntitlement {
 
     this.entitlement = new gcp.privilegedaccessmanager.Entitlement(
       componentName,
-      args
+      args,
+      opts
     );
   }
 
